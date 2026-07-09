@@ -1,0 +1,9 @@
+# ข้อมูลดิบรายบุคคล (PHI) — ห้าม commit เด็ดขาด
+data/raw/
+*.xls
+*.xlsx
+
+# ระบบ
+.DS_Store
+__pycache__/
+*.pyc

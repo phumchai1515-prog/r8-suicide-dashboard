@@ -1,0 +1,125 @@
+"""ทดสอบ ETL: รันด้วย  python3 etl/test_parse.py  (ใช้ unittest ในตัว)"""
+
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+import parse
+
+
+class TestAgeGroup(unittest.TestCase):
+    def test_groups_child_into_0_14(self):
+        self.assertEqual(parse.age_group("14"), "0-14")
+
+    def test_groups_boundary_15_into_15_24(self):
+        self.assertEqual(parse.age_group("15"), "15-24")
+
+    def test_groups_elderly_into_65_plus(self):
+        self.assertEqual(parse.age_group("80"), "65+")
+
+    def test_returns_unknown_for_non_numeric(self):
+        self.assertEqual(parse.age_group(""), "ไม่ระบุ")
+        self.assertEqual(parse.age_group("ไม่ทราบ"), "ไม่ระบุ")
+
+    def test_returns_unknown_for_negative(self):
+        self.assertEqual(parse.age_group("-1"), "ไม่ระบุ")
+
+
+class TestAggregate(unittest.TestCase):
+    @staticmethod
+    def make_record(province="เลย", age="30", sex="ชาย", month="10",
+                    year="2568", outcome="ตาย", access="", hanging="ไม่มี"):
+        rec = [""] * parse.EXPECTED_COLUMNS
+        rec[parse.COL_PROVINCE] = province
+        rec[parse.COL_AGE] = age
+        rec[parse.COL_SEX] = sex
+        rec[parse.COL_MONTH] = month
+        rec[parse.COL_YEAR] = year
+        rec[parse.COL_OUTCOME] = outcome
+        rec[parse.COL_ACCESS_7_2] = access
+        rec[27] = hanging  # แขวนคอ
+        return rec
+
+    def test_counts_death_separately_from_attempt(self):
+        records = [
+            self.make_record(outcome="ตาย"),
+            self.make_record(outcome="บาดเจ็บ"),
+            self.make_record(outcome="ไม่บาดเจ็บ"),
+        ]
+        result = parse.aggregate(records)
+        bucket = result["เลย"]["2568-10"]
+        self.assertEqual(bucket["die"], 1)
+        self.assertEqual(bucket["attempt"], 2)
+
+    def test_counts_access_only_for_attempts(self):
+        records = [
+            self.make_record(outcome="ตาย", access="มี"),
+            self.make_record(outcome="บาดเจ็บ", access="มี"),
+            self.make_record(outcome="บาดเจ็บ", access="ไม่มี"),
+        ]
+        bucket = parse.aggregate(records)["เลย"]["2568-10"]
+        self.assertEqual(bucket["access"], 1)
+
+    def test_counts_method_when_present(self):
+        bucket = parse.aggregate([self.make_record(hanging="มี")])["เลย"]["2568-10"]
+        self.assertEqual(bucket["byMethod"].get("แขวนคอ"), 1)
+
+    def test_rejects_unknown_province(self):
+        with self.assertRaises(ValueError):
+            parse.aggregate([self.make_record(province="เชียงใหม่")])
+
+    def test_rejects_unknown_outcome(self):
+        with self.assertRaises(ValueError):
+            parse.aggregate([self.make_record(outcome="ไม่ทราบ")])
+
+    def test_rejects_month_outside_period(self):
+        with self.assertRaises(ValueError):
+            parse.aggregate([self.make_record(month="09", year="2568")])
+
+
+class TestRealData(unittest.TestCase):
+    """ทดสอบกับไฟล์จริงใน data/raw (ข้ามถ้าไม่มีไฟล์)"""
+
+    EXPECTED = {
+        "1ตค69-31ธค69.xls": (621, 109),
+        "1มค69-31มีค69.xls": (499, 120),
+        "1เมย69-9กค69.xls": (471, 105),
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        if not parse.RAW_DIR.exists():
+            raise unittest.SkipTest("ไม่มีโฟลเดอร์ data/raw")
+
+    def test_record_and_death_counts_match_source(self):
+        for filename, (expected_total, expected_deaths) in self.EXPECTED.items():
+            path = parse.RAW_DIR / filename
+            if not path.exists():
+                self.skipTest(f"ไม่มีไฟล์ {filename}")
+            records = parse.parse_case_file(path)
+            deaths = sum(1 for r in records if r[parse.COL_OUTCOME] == "ตาย")
+            self.assertEqual(len(records), expected_total, filename)
+            self.assertEqual(deaths, expected_deaths, filename)
+
+    def test_population_totals_are_consistent(self):
+        path = parse.RAW_DIR / parse.POPULATION_FILE
+        if not path.exists():
+            self.skipTest("ไม่มีไฟล์ประชากร")
+        population = parse.parse_population(path)
+        self.assertEqual(population["รวม"], 5_435_662)
+        self.assertEqual(len([p for p in parse.PROVINCES if p in population]), 7)
+
+    def test_aggregate_totals_match_source(self):
+        records = []
+        for filename in parse.CASE_FILES:
+            path = parse.RAW_DIR / filename
+            if not path.exists():
+                self.skipTest(f"ไม่มีไฟล์ {filename}")
+            records.extend(parse.parse_case_file(path))
+        data = parse.aggregate(records)
+        parse.validate(data, len(records))  # ต้องไม่ raise
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

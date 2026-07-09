@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Dashboard ตัวชี้วัดการฆ่าตัวตาย เขตสุขภาพที่ 8</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <p class="header-kicker">ระบบรายงานตัวชี้วัดสุขภาพจิต · ปีงบประมาณ 2569</p>
+    <h1>Dashboard เฝ้าระวังการฆ่าตัวตายและพยายามฆ่าตัวตาย</h1>
+    <p class="header-sub">เขตสุขภาพที่ 8 — เลย หนองบัวลำภู อุดรธานี หนองคาย บึงกาฬ สกลนคร นครพนม</p>
+    <p class="header-period" id="periodLabel"></p>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="filters" aria-label="ตัวกรองข้อมูล">
+    <div class="filter-group">
+      <label for="provinceFilter">จังหวัด</label>
+      <select id="provinceFilter">
+        <option value="all">ทั้งเขตสุขภาพที่ 8</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="periodFilter">ช่วงเวลา</label>
+      <select id="periodFilter">
+        <option value="all">ทั้งปีงบประมาณ (สะสม)</option>
+        <option value="q1">ไตรมาส 1 (ต.ค.–ธ.ค. 68)</option>
+        <option value="q2">ไตรมาส 2 (ม.ค.–มี.ค. 69)</option>
+        <option value="q3">ไตรมาส 3 (เม.ย.–9 ก.ค. 69)*</option>
+      </select>
+    </div>
+    <p class="filter-note">* ไตรมาส 3 ข้อมูลถึงวันที่ 9 ก.ค. 2569 เท่านั้น</p>
+  </section>
+
+  <section class="kpi-grid" aria-label="ตัวชี้วัดหลัก">
+    <article class="kpi-card kpi-main" id="kpi1Card">
+      <p class="kpi-title">ตัวชี้วัดที่ 1 · อัตราการฆ่าตัวตายสำเร็จ</p>
+      <p class="kpi-value"><span id="kpi1Value">–</span><span class="kpi-unit">ต่อแสนประชากร</span></p>
+      <p class="kpi-target">เป้าหมาย: ไม่เกิน <span id="kpi1Target"></span> ต่อแสนประชากร</p>
+      <p class="kpi-extra" id="kpi1Annualized"></p>
+      <span class="kpi-badge" id="kpi1Badge">–</span>
+    </article>
+
+    <article class="kpi-card kpi-main" id="kpi2Card">
+      <p class="kpi-title">ตัวชี้วัดที่ 2 · ผู้พยายามฆ่าตัวตายเข้าถึงบริการ</p>
+      <p class="kpi-value"><span id="kpi2Value">–</span><span class="kpi-unit">%</span></p>
+      <p class="kpi-target">เป้าหมาย: ไม่น้อยกว่าร้อยละ <span id="kpi2Target"></span></p>
+      <p class="kpi-extra" id="kpi2Detail"></p>
+      <span class="kpi-badge" id="kpi2Badge">–</span>
+    </article>
+
+    <article class="kpi-card kpi-sub">
+      <p class="kpi-title">ฆ่าตัวตายสำเร็จ (ราย)</p>
+      <p class="kpi-value kpi-value-death" id="totalDeaths">–</p>
+    </article>
+    <article class="kpi-card kpi-sub">
+      <p class="kpi-title">พยายามฆ่าตัวตาย (ราย)</p>
+      <p class="kpi-value kpi-value-attempt" id="totalAttempts">–</p>
+    </article>
+    <article class="kpi-card kpi-sub">
+      <p class="kpi-title">รวมทั้งหมด (ราย)</p>
+      <p class="kpi-value" id="totalCases">–</p>
+    </article>
+    <article class="kpi-card kpi-sub">
+      <p class="kpi-title">ประชากรกลางปี 2568</p>
+      <p class="kpi-value kpi-value-pop" id="populationShown">–</p>
+    </article>
+  </section>
+
+  <section class="chart-grid">
+    <article class="panel panel-wide">
+      <h2>แนวโน้มรายเดือน</h2>
+      <div class="chart-box chart-box-tall"><canvas id="trendChart"></canvas></div>
+    </article>
+
+    <article class="panel panel-wide">
+      <h2>อัตราการฆ่าตัวตายสำเร็จรายจังหวัด (ต่อแสนประชากร)</h2>
+      <div class="chart-box chart-box-tall"><canvas id="provinceRateChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <h2>ร้อยละการเข้าถึงบริการรายจังหวัด</h2>
+      <div class="chart-box"><canvas id="accessChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <h2>จำแนกตามเพศ</h2>
+      <div class="chart-box"><canvas id="sexChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <h2>จำแนกตามกลุ่มอายุ</h2>
+      <div class="chart-box"><canvas id="ageChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <h2>วิธีที่ใช้ทำร้ายตนเอง</h2>
+      <div class="chart-box"><canvas id="methodChart"></canvas></div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>ตารางสรุปรายจังหวัด</h2>
+    <div class="table-wrap">
+      <table id="provinceTable">
+        <thead>
+          <tr>
+            <th>จังหวัด</th>
+            <th>ประชากร</th>
+            <th>ฆ่าตัวตายสำเร็จ</th>
+            <th>อัตราต่อแสน</th>
+            <th>คาดการณ์ทั้งปี</th>
+            <th>พยายามฯ</th>
+            <th>เข้าถึงบริการ</th>
+            <th>% เข้าถึง</th>
+            <th>KPI 1</th>
+            <th>KPI 2</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="notes">
+    <h2>หมายเหตุและข้อจำกัดของข้อมูล</h2>
+    <ul>
+      <li>แหล่งข้อมูล: รายงานเฝ้าระวังการทำร้ายตนเอง (รง.506S) ช่วง 1 ต.ค. 2568 – 9 ก.ค. 2569 และข้อมูลประชากรกลางปี 2568 (กองยุทธศาสตร์และแผนงาน กระทรวงสาธารณสุข)</li>
+      <li>"เข้าถึงบริการ" นิยามจากข้อ 7.2 ของแบบรายงาน: ได้รับการตรวจประเมินตามมาตรฐานจิตเวชและการช่วยเหลือทางสังคมจิตใจ</li>
+      <li>ข้อมูลปีงบประมาณ 2569 ยังไม่ครบปี (ถึง 9 ก.ค. 2569) — "คาดการณ์ทั้งปี" คำนวณแบบ annualized ตามจำนวนวันของข้อมูลจริง</li>
+      <li>จำนวนเคสจากระบบรายงาน 506S อาจต่ำกว่าจำนวนที่เกิดขึ้นจริง (under-reporting)</li>
+      <li>Dashboard นี้แสดงเฉพาะข้อมูลสรุปรวม ไม่มีข้อมูลรายบุคคล</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <p>อัปเดตข้อมูลล่าสุด: <span id="generatedAt">–</span></p>
+    <p>สายด่วนสุขภาพจิต โทร <strong>1323</strong> ตลอด 24 ชั่วโมง</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
