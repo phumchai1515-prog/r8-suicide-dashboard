@@ -16,14 +16,14 @@ const QUARTER_MONTHS = {
 };
 
 const COLORS = {
-  death: "#f87171",
-  attempt: "#fbbf24",
-  good: "#34d399",
-  accent: "#38bdf8",
-  teal: "#2dd4bf",
-  indigo: "#818cf8",
-  muted: "#93a1b5",
-  grid: "rgba(148, 163, 184, 0.1)",
+  death: "#dc2626",
+  attempt: "#f59e0b",
+  good: "#059669",
+  accent: "#0284c7",
+  teal: "#0d9488",
+  indigo: "#6366f1",
+  muted: "#5b6b80",
+  grid: "rgba(23, 32, 51, 0.07)",
 };
 
 const DAYS_PER_YEAR = 365;
@@ -172,8 +172,8 @@ function setRing(ringId, numId, percent, displayText, isPass) {
   const color = isPass ? "var(--good)" : "var(--bad)";
   const pct = Math.max(0, Math.min(100, percent));
   ring.style.background =
-    `radial-gradient(closest-side, #0d1526 82%, transparent 83% 100%), ` +
-    `conic-gradient(${color} ${pct}%, rgba(148,163,184,.14) 0)`;
+    `radial-gradient(closest-side, var(--surface) 82%, transparent 83% 100%), ` +
+    `conic-gradient(${color} ${pct}%, var(--line-soft) 0)`;
   setText(numId, displayText);
 }
 
@@ -304,8 +304,10 @@ function initChartTheme() {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
   Chart.defaults.plugins.legend.labels.pointStyle = "rectRounded";
   Chart.defaults.plugins.legend.labels.boxWidth = 10;
-  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(13, 21, 38, 0.95)";
-  Chart.defaults.plugins.tooltip.borderColor = "rgba(148, 163, 184, 0.25)";
+  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(255, 255, 255, 0.97)";
+  Chart.defaults.plugins.tooltip.titleColor = "#172033";
+  Chart.defaults.plugins.tooltip.bodyColor = "#5b6b80";
+  Chart.defaults.plugins.tooltip.borderColor = "rgba(23, 32, 51, 0.12)";
   Chart.defaults.plugins.tooltip.borderWidth = 1;
   Chart.defaults.plugins.tooltip.padding = 10;
   Chart.defaults.plugins.tooltip.cornerRadius = 8;
@@ -320,8 +322,8 @@ function areaGradient(canvasId, hex) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext("2d");
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.parentElement.clientHeight);
-  gradient.addColorStop(0, hex + "3d");
-  gradient.addColorStop(1, hex + "02");
+  gradient.addColorStop(0, hex + "2e");
+  gradient.addColorStop(1, hex + "03");
   return gradient;
 }
 
@@ -654,7 +656,7 @@ async function init() {
     DB = await response.json();
   } catch (error) {
     document.querySelector("main").innerHTML =
-      `<p style="padding:60px 20px;text-align:center;color:#f87171;">
+      `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
         เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
     return;
   }
