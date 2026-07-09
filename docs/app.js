@@ -599,12 +599,12 @@ function renderRiskChart(summary) {
   });
 }
 
-/* กราฟย่อยรายจังหวัด: ปัจจัยเสี่ยง 5 อันดับแรกของแต่ละจังหวัด */
-const TOP_RISKS_PER_PROVINCE = 5;
+/* กราฟย่อยปัจจัยเสี่ยง (small multiples):
+   ดูทั้งเขต = จังหวัดละใบ / เลือกจังหวัด = อำเภอละใบของจังหวัดนั้น */
+const TOP_RISKS_PER_PANEL = 5;
 
-function renderProvinceRiskCharts(months) {
+function renderRiskSmallMultiples(provinceValue, months) {
   const container = document.getElementById("provinceRiskGrid");
-  /* ล้างกราฟเก่าก่อนสร้าง canvas ชุดใหม่ */
   for (const id of Object.keys(charts)) {
     if (id.startsWith("provRisk-")) {
       charts[id].destroy();
@@ -613,19 +613,33 @@ function renderProvinceRiskCharts(months) {
   }
   container.textContent = "";
 
-  DB.provinces.forEach((province, index) => {
-    const summary = summarize([province], months);
-    const entries = Object.entries(summary.byRisk)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, TOP_RISKS_PER_PROVINCE);
-    const totalCases = summary.die + summary.attempt;
+  let items; // [{name, byRisk, totalCases}]
+  if (provinceValue === "all") {
+    setText("riskSectionTitle", "ปัจจัยเสี่ยงรายจังหวัด");
+    setText("riskSectionHint", "5 อันดับแรกของแต่ละจังหวัด ตามช่วงเวลาที่เลือก");
+    items = DB.provinces.map((province) => {
+      const s = summarize([province], months);
+      return { name: province, byRisk: s.byRisk, totalCases: s.die + s.attempt };
+    });
+  } else {
+    setText("riskSectionTitle", `ปัจจัยเสี่ยงรายอำเภอ · จังหวัด${provinceValue}`);
+    setText("riskSectionHint", "5 อันดับแรกของแต่ละอำเภอ ตามช่วงเวลาที่เลือก");
+    const byDistrict = summarizeDistricts(provinceValue, months);
+    items = Object.entries(byDistrict)
+      .map(([name, s]) => ({ name, byRisk: s.byRisk, totalCases: s.die + s.attempt }))
+      .sort((a, b) => b.totalCases - a.totalCases);
+  }
 
+  items.forEach((item, index) => {
+    const entries = Object.entries(item.byRisk)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, TOP_RISKS_PER_PANEL);
     const panel = document.createElement("article");
     panel.className = "panel mini-panel";
     const canvasId = `provRisk-${index}`;
     panel.innerHTML = `
-      <p class="panel-title">${province}</p>
-      <p class="panel-sub">${formatNumber(totalCases)} เคสในช่วงที่เลือก · ปัจจัยเสี่ยง ${TOP_RISKS_PER_PROVINCE} อันดับแรก</p>
+      <p class="panel-title">${item.name}</p>
+      <p class="panel-sub">${formatNumber(item.totalCases)} เคสในช่วงที่เลือก · ปัจจัยเสี่ยง ${TOP_RISKS_PER_PANEL} อันดับแรก</p>
       <div class="chart-box mini"><canvas id="${canvasId}"></canvas></div>`;
     container.appendChild(panel);
 
@@ -861,7 +875,74 @@ function renderDistrictSection(provinceValue, months) {
 
 /* ---------- table ---------- */
 
-function renderTable(summary, months) {
+function renderTable(summary, months, provinceValue) {
+  if (provinceValue === "all") {
+    renderProvinceTable(summary, months);
+  } else {
+    renderDistrictTable(provinceValue, months);
+  }
+}
+
+/* ตารางรายอำเภอ (เมื่อเลือกจังหวัด) — ไม่มีประชากร/HDC รายอำเภอ จึงแสดงจำนวนราย */
+function renderDistrictTable(province, months) {
+  setText("tableTitle", `ตารางสรุปรายอำเภอ · จังหวัด${province}`);
+  document.querySelector("#provinceTable thead").innerHTML = `
+    <tr>
+      <th>อำเภอ</th>
+      <th>ฆ่าตัวตายสำเร็จ</th>
+      <th>พยายามฯ</th>
+      <th>รวม</th>
+      <th>ตรวจประเมินจิตเวช (7.2)</th>
+      <th>% ประเมิน</th>
+    </tr>`;
+  const tbody = document.querySelector("#provinceTable tbody");
+  tbody.textContent = "";
+
+  const byDistrict = summarizeDistricts(province, months);
+  const order = Object.keys(byDistrict).sort((a, b) =>
+    (byDistrict[b].die + byDistrict[b].attempt) - (byDistrict[a].die + byDistrict[a].attempt));
+
+  const makeRow = (name, counts, isTotal) => {
+    const assessed = accessPercent(counts.access, counts.attempt);
+    const row = document.createElement("tr");
+    if (isTotal) row.className = "row-total";
+    row.innerHTML = `
+      <td>${name}</td>
+      <td>${formatNumber(counts.die)}</td>
+      <td>${formatNumber(counts.attempt)}</td>
+      <td>${formatNumber(counts.die + counts.attempt)}</td>
+      <td>${formatNumber(counts.access)}</td>
+      <td>${formatNumber(assessed, 1)}</td>`;
+    return row;
+  };
+
+  const totals = { die: 0, attempt: 0, access: 0 };
+  for (const district of order) {
+    const counts = byDistrict[district];
+    totals.die += counts.die;
+    totals.attempt += counts.attempt;
+    totals.access += counts.access;
+    tbody.appendChild(makeRow(district, counts, false));
+  }
+  tbody.appendChild(makeRow(`รวมจังหวัด${province}`, totals, true));
+}
+
+function renderProvinceTable(summary, months) {
+  setText("tableTitle", "ตารางสรุปรายจังหวัด");
+  document.querySelector("#provinceTable thead").innerHTML = `
+    <tr>
+      <th>จังหวัด</th>
+      <th>ประชากร</th>
+      <th>ฆ่าตัวตายสำเร็จ</th>
+      <th>อัตราต่อแสน</th>
+      <th>คาดการณ์ทั้งปี</th>
+      <th>พยายามฯ (506S)</th>
+      <th>มารับบริการ (HDC)</th>
+      <th>% เข้าถึง (506S÷HDC)</th>
+      <th>% ประเมินจิตเวช (7.2)</th>
+      <th>KPI 1</th>
+      <th>KPI 2</th>
+    </tr>`;
   const days = daysCovered(months);
   const tbody = document.querySelector("#provinceTable tbody");
   tbody.textContent = "";
@@ -927,8 +1008,8 @@ function render() {
   renderAgeChart(summary);
   renderMethodChart(summary);
   renderRiskChart(summary);
-  renderProvinceRiskCharts(months);
-  renderTable(allProvinceSummary, months);
+  renderRiskSmallMultiples(provinceValue, months);
+  renderTable(allProvinceSummary, months, provinceValue);
 }
 
 function populateProvinceFilter() {
