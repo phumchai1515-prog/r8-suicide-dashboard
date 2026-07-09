@@ -65,6 +65,45 @@ class TestAggregate(unittest.TestCase):
         bucket = parse.aggregate([self.make_record(hanging="มี")])["เลย"]["2568-10"]
         self.assertEqual(bucket["byMethod"].get("แขวนคอ"), 1)
 
+    def test_facility_district_strips_hospital_prefix(self):
+        self.assertEqual(parse.facility_district("โรงพยาบาลวังสะพุง", "เลย"), "วังสะพุง")
+
+    def test_facility_district_maps_provincial_hospital_to_mueang(self):
+        self.assertEqual(parse.facility_district("โรงพยาบาลเลย", "เลย"), "เมืองเลย")
+
+    def test_facility_district_handles_royal_hospital(self):
+        self.assertEqual(
+            parse.facility_district("โรงพยาบาลสมเด็จพระยุพราชท่าบ่อ", "หนองคาย"),
+            "ท่าบ่อ")
+
+    def test_facility_district_handles_special_names(self):
+        self.assertEqual(
+            parse.facility_district("โรงพยาบาลพระอาจารย์แบน  ธนากโร", "สกลนคร"),
+            "ภูพาน")
+
+    def test_district_of_prefers_event_address(self):
+        rec = self.make_record()
+        rec[parse.COL_DISTRICT] = "อ.เชียงคาน"
+        rec[parse.COL_FACILITY] = "โรงพยาบาลเลย"
+        self.assertEqual(parse.district_of(rec), "เชียงคาน")
+
+    def test_district_of_falls_back_to_facility(self):
+        rec = self.make_record()
+        rec[parse.COL_DISTRICT] = ""
+        rec[parse.COL_FACILITY] = "โรงพยาบาลนาด้วง"
+        self.assertEqual(parse.district_of(rec), "นาด้วง")
+
+    def test_aggregate_districts_totals_match(self):
+        records = [
+            self.make_record(outcome="ตาย"),
+            self.make_record(outcome="บาดเจ็บ"),
+        ]
+        records[0][parse.COL_DISTRICT] = "อ.เชียงคาน"
+        records[1][parse.COL_FACILITY] = "โรงพยาบาลวังสะพุง"
+        result = parse.aggregate_districts(records)
+        self.assertEqual(result["เลย"]["เชียงคาน"]["2568-10"]["die"], 1)
+        self.assertEqual(result["เลย"]["วังสะพุง"]["2568-10"]["attempt"], 1)
+
     def test_counts_risk_factor_when_present(self):
         rec = self.make_record()
         rec[91] = "มี"  # R1 ป่วยด้วยโรคจิตเวช

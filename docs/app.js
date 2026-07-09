@@ -653,6 +653,204 @@ function renderProvinceRiskCharts(months) {
   });
 }
 
+/* ---------- ข้อมูลรายอำเภอ (drill-down เมื่อเลือกจังหวัด) ---------- */
+
+const STACK_PALETTE = [
+  "#0284c7", "#059669", "#f59e0b", "#dc2626", "#6366f1", "#0d9488", "#a855f7",
+];
+const OTHER_COLOR = "#94a3b8";
+const TOP_STACK_CATEGORIES = 5;
+const DISTRICT_ROW_PX = 34;
+const DISTRICT_MIN_HEIGHT = 260;
+
+/* รวมยอดรายอำเภอของจังหวัดตามเดือนที่เลือก (ตัดอำเภอที่ไม่มีเคสออก) */
+function summarizeDistricts(province, months) {
+  const result = {};
+  const districts = DB.districts[province] || {};
+  for (const [district, byMonth] of Object.entries(districts)) {
+    const agg = {
+      die: 0, attempt: 0, access: 0,
+      bySex: {}, byAge: {}, byMethod: {}, byRisk: {},
+    };
+    for (const month of months) {
+      const bucket = byMonth[month];
+      if (!bucket) continue;
+      agg.die += bucket.die;
+      agg.attempt += bucket.attempt;
+      agg.access += bucket.access;
+      mergeCounts(agg.bySex, bucket.bySex);
+      mergeCounts(agg.byAge, bucket.byAge);
+      for (const [k, v] of Object.entries(bucket.byMethod)) {
+        agg.byMethod[k] = (agg.byMethod[k] || 0) + v;
+      }
+      for (const [k, v] of Object.entries(bucket.byRisk || {})) {
+        agg.byRisk[k] = (agg.byRisk[k] || 0) + v;
+      }
+    }
+    if (agg.die + agg.attempt > 0) result[district] = agg;
+  }
+  return result;
+}
+
+function setDistrictChartHeight(canvasId, rowCount) {
+  const box = document.getElementById(canvasId).parentElement;
+  box.style.height = `${Math.max(DISTRICT_MIN_HEIGHT, rowCount * DISTRICT_ROW_PX + 80)}px`;
+}
+
+const HORIZONTAL_STACKED_OPTIONS = {
+  maintainAspectRatio: false,
+  indexAxis: "y",
+  scales: {
+    x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+    y: { stacked: true, grid: { display: false } },
+  },
+};
+
+/* สร้าง stacked datasets จากหมวดหมู่ top-N ของทุกอำเภอ (ที่เหลือรวมเป็น อื่นๆ)
+   ถ้าระบุ fixedOrder จะใช้ลำดับหมวดหมู่นั้นทั้งชุดแทนการเลือก top-N */
+function stackedByCategory(order, byDistrict, field, fixedOrder) {
+  const totals = {};
+  for (const district of order) {
+    for (const [k, v] of Object.entries(byDistrict[district][field])) {
+      const n = typeof v === "number" ? v : v.die + v.attempt;
+      totals[k] = (totals[k] || 0) + n;
+    }
+  }
+  const top = fixedOrder
+    ? fixedOrder.filter((k) => totals[k])
+    : Object.entries(totals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, TOP_STACK_CATEGORIES)
+        .map(([k]) => k);
+
+  const valueOf = (district, key) => {
+    const v = byDistrict[district][field][key];
+    if (v === undefined) return 0;
+    return typeof v === "number" ? v : v.die + v.attempt;
+  };
+  const datasets = top.map((key, i) => ({
+    label: key,
+    data: order.map((d) => valueOf(d, key)),
+    backgroundColor: STACK_PALETTE[i % STACK_PALETTE.length] + "d9",
+    borderRadius: 3,
+  }));
+  const hasOther = Object.keys(totals).length > top.length;
+  if (hasOther) {
+    datasets.push({
+      label: "อื่นๆ",
+      data: order.map((d) =>
+        Object.keys(byDistrict[d][field])
+          .filter((k) => !top.includes(k))
+          .reduce((sum, k) => sum + valueOf(d, k), 0)),
+      backgroundColor: OTHER_COLOR + "b3",
+      borderRadius: 3,
+    });
+  }
+  return datasets;
+}
+
+function renderDistrictSection(provinceValue, months) {
+  const section = document.getElementById("districtSection");
+  const districtChartIds = [
+    "dCasesChart", "dAssessChart", "dSexChart", "dAgeChart", "dMethodChart", "dRiskChart",
+  ];
+  if (provinceValue === "all") {
+    section.hidden = true;
+    for (const id of districtChartIds) {
+      if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    }
+    return;
+  }
+  section.hidden = false;
+  setText("districtTitle", `ข้อมูลรายอำเภอ · จังหวัด${provinceValue}`);
+
+  const byDistrict = summarizeDistricts(provinceValue, months);
+  const order = Object.keys(byDistrict).sort((a, b) =>
+    (byDistrict[b].die + byDistrict[b].attempt) - (byDistrict[a].die + byDistrict[a].attempt));
+  for (const id of districtChartIds) setDistrictChartHeight(id, order.length);
+
+  /* 1. จำนวนเคสรายอำเภอ */
+  drawChart("dCasesChart", {
+    type: "bar",
+    data: {
+      labels: order,
+      datasets: [
+        {
+          label: "ฆ่าตัวตายสำเร็จ",
+          data: order.map((d) => byDistrict[d].die),
+          backgroundColor: COLORS.death + "d9",
+          borderRadius: 4,
+        },
+        {
+          label: "พยายามฯ",
+          data: order.map((d) => byDistrict[d].attempt),
+          backgroundColor: COLORS.attempt + "d9",
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "ราย" } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+
+  /* 2. % ตรวจประเมินจิตเวช (ข้อ 7.2) รายอำเภอ */
+  const assessValues = order.map((d) =>
+    accessPercent(byDistrict[d].access, byDistrict[d].attempt));
+  drawChart("dAssessChart", {
+    type: "bar",
+    data: {
+      labels: order,
+      datasets: [{
+        label: "% ตรวจประเมินจิตเวช",
+        data: assessValues,
+        backgroundColor: assessValues.map((v) =>
+          v >= DB.meta.kpi2Target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+
+  /* 3-6. stacked: เพศ / กลุ่มอายุ / วิธี / กลุ่มเสี่ยง */
+  drawChart("dSexChart", {
+    type: "bar",
+    data: { labels: order, datasets: stackedByCategory(order, byDistrict, "bySex") },
+    options: HORIZONTAL_STACKED_OPTIONS,
+  });
+  drawChart("dAgeChart", {
+    type: "bar",
+    data: {
+      labels: order,
+      datasets: stackedByCategory(order, byDistrict, "byAge", DB.ageGroups),
+    },
+    options: HORIZONTAL_STACKED_OPTIONS,
+  });
+  drawChart("dMethodChart", {
+    type: "bar",
+    data: { labels: order, datasets: stackedByCategory(order, byDistrict, "byMethod") },
+    options: HORIZONTAL_STACKED_OPTIONS,
+  });
+  drawChart("dRiskChart", {
+    type: "bar",
+    data: { labels: order, datasets: stackedByCategory(order, byDistrict, "byRisk") },
+    options: HORIZONTAL_STACKED_OPTIONS,
+  });
+}
+
 /* ---------- table ---------- */
 
 function renderTable(summary, months) {
@@ -712,6 +910,7 @@ function render() {
 
   renderKpis(summary, provinces, months);
   renderInsights(allProvinceSummary, months);
+  renderDistrictSection(provinceValue, months);
   renderTrendChart(summary, months);
   renderProvinceRateChart(allProvinceSummary, months);
   renderAccessChart(allProvinceSummary, months);

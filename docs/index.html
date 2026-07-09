@@ -131,6 +131,46 @@
     <div class="insight-grid" id="insightGrid"></div>
   </section>
 
+  <section class="insights" id="districtSection" hidden aria-label="ข้อมูลรายอำเภอ">
+    <div class="section-head">
+      <span class="bar"></span>
+      <h3 id="districtTitle">ข้อมูลรายอำเภอ</h3>
+      <span class="hint">เรียงตามจำนวนเคส · ตามช่วงเวลาที่เลือก</span>
+    </div>
+    <div class="grid grid-2">
+      <article class="panel">
+        <p class="panel-title">ฆ่าตัวตายสำเร็จและพยายามฯ รายอำเภอ</p>
+        <p class="panel-sub">จำนวนราย (ไม่มีข้อมูลประชากรรายอำเภอ จึงไม่คำนวณอัตราต่อแสน)</p>
+        <div class="chart-box district-box"><canvas id="dCasesChart"></canvas></div>
+      </article>
+      <article class="panel">
+        <p class="panel-title">การเข้าถึงบริการรายอำเภอ</p>
+        <p class="panel-sub">% ผู้พยายามฯ ที่ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2 — HDC ไม่มีข้อมูลรายอำเภอ)</p>
+        <div class="chart-box district-box"><canvas id="dAssessChart"></canvas></div>
+      </article>
+      <article class="panel">
+        <p class="panel-title">จำแนกตามเพศ รายอำเภอ</p>
+        <p class="panel-sub">รวมผู้เสียชีวิตและผู้พยายามฯ</p>
+        <div class="chart-box district-box"><canvas id="dSexChart"></canvas></div>
+      </article>
+      <article class="panel">
+        <p class="panel-title">จำแนกตามกลุ่มอายุ รายอำเภอ</p>
+        <p class="panel-sub">รวมผู้เสียชีวิตและผู้พยายามฯ</p>
+        <div class="chart-box district-box"><canvas id="dAgeChart"></canvas></div>
+      </article>
+      <article class="panel">
+        <p class="panel-title">วิธีที่ใช้ทำร้ายตนเอง รายอำเภอ</p>
+        <p class="panel-sub">5 วิธีที่พบบ่อย (ที่เหลือรวมเป็น "อื่นๆ")</p>
+        <div class="chart-box district-box"><canvas id="dMethodChart"></canvas></div>
+      </article>
+      <article class="panel">
+        <p class="panel-title">กลุ่มเสี่ยง / ปัจจัยเสี่ยง รายอำเภอ</p>
+        <p class="panel-sub">5 ปัจจัยที่พบบ่อย (ที่เหลือรวมเป็น "อื่นๆ")</p>
+        <div class="chart-box district-box"><canvas id="dRiskChart"></canvas></div>
+      </article>
+    </div>
+  </section>
+
   <section class="grid reveal d5">
     <article class="panel">
       <p class="panel-title">แนวโน้มรายเดือน</p>

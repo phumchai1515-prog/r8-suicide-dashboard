@@ -31,13 +31,27 @@ HDC_SHEET = "Sheet1"
 
 # ตำแหน่งคอลัมน์ในรายงาน 506S (202 คอลัมน์)
 COL_PROVINCE = 2
+COL_FACILITY = 4  # ชื่อสถานบริการที่รายงาน (ครบ 100%)
 COL_AGE = 5
 COL_SEX = 6
 COL_MONTH = 15
 COL_YEAR = 16
+COL_DISTRICT = 24  # Add.S อำเภอที่เกิดเหตุ (ว่างราว 40% — ใช้สถานบริการเป็น fallback)
 COL_OUTCOME = 42
 COL_ACCESS_7_2 = 187  # 7.2 การตรวจประเมินตามมาตรฐานจิตเวชและการช่วยเหลือทางสังคมจิตใจ
 EXPECTED_COLUMNS = 202
+
+# สถานบริการที่ชื่อไม่ตรงรูปแบบ "โรงพยาบาล<อำเภอ>"
+SPECIAL_FACILITY_DISTRICT = {
+    "โรงพยาบาลพระอาจารย์ฝั้นอาจาโร": "พรรณานิคม",
+    "โรงพยาบาลพระอาจารย์แบน ธนากโร": "ภูพาน",
+    "สำนักงานสาธารณสุขจังหวัดหนองคาย": "เมืองหนองคาย",
+    "โรงพยาบาลส่งเสริมสุขภาพตำบลหนองกอมเกาะ": "เมืองหนองคาย",
+    "โรงพยาบาลนาวัง เฉลิมพระเกียรติ 80 พรรษา": "นาวัง",
+}
+ROYAL_HOSPITAL_PREFIX = "โรงพยาบาลสมเด็จพระยุพราช"
+HOSPITAL_PREFIX = "โรงพยาบาล"
+UNKNOWN_DISTRICT = "ไม่ระบุ"
 
 METHOD_COLUMNS = {
     27: "แขวนคอ",
@@ -160,6 +174,39 @@ def age_group(age_text: str) -> str:
     return "65+"
 
 
+def facility_district(facility: str, province: str) -> str:
+    """แปลงชื่อสถานบริการเป็นชื่ออำเภอ เช่น โรงพยาบาลวังสะพุง -> วังสะพุง"""
+    name = " ".join(facility.split())  # normalize ช่องว่างซ้ำ
+    if not name:
+        return UNKNOWN_DISTRICT
+    if name in SPECIAL_FACILITY_DISTRICT:
+        return SPECIAL_FACILITY_DISTRICT[name]
+    if name.startswith(ROYAL_HOSPITAL_PREFIX):
+        name = name[len(ROYAL_HOSPITAL_PREFIX):].strip()
+    elif name.startswith(HOSPITAL_PREFIX):
+        name = name[len(HOSPITAL_PREFIX):].strip()
+    # โรงพยาบาลประจำจังหวัด (ชื่อ = ชื่อจังหวัด) อยู่อำเภอเมือง
+    if name == province:
+        return f"เมือง{province}"
+    return name or UNKNOWN_DISTRICT
+
+
+def normalize_district(name: str) -> str:
+    """ตัดคำนำหน้า อ./อำเภอ/กิ่งอำเภอ ให้เหลือชื่ออำเภอมาตรฐาน"""
+    for prefix in ("อ.", "อำเภอ", "กิ่งอำเภอ"):
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+    return name or UNKNOWN_DISTRICT
+
+
+def district_of(record: list[str]) -> str:
+    """อำเภอของเคส: ใช้อำเภอที่เกิดเหตุ (Add.S) ก่อน ถ้าว่างใช้อำเภอของสถานบริการ"""
+    event_district = record[COL_DISTRICT].strip()
+    if event_district:
+        return normalize_district(event_district)
+    return facility_district(record[COL_FACILITY].strip(), record[COL_PROVINCE].strip())
+
+
 def month_key(record: list[str]) -> str:
     """สร้าง key ปี-เดือน เช่น '2568-10' จากคอลัมน์ปี/เดือน"""
     year = record[COL_YEAR].strip()
@@ -179,46 +226,71 @@ def empty_bucket() -> dict:
     }
 
 
+def apply_record(bucket: dict, rec: list[str]) -> None:
+    """เพิ่มยอดจากหนึ่งเคสลงใน bucket สรุปรวม (ตรวจสอบค่าก่อนเรียก)"""
+    outcome = rec[COL_OUTCOME].strip()
+    sex = rec[COL_SEX].strip() or "ไม่ระบุ"
+    group = age_group(rec[COL_AGE])
+
+    is_death = outcome == OUTCOME_DEATH
+    is_attempt = outcome in OUTCOME_ATTEMPTS
+    if not is_death and not is_attempt:
+        raise ValueError(f"พบผลการกระทำที่ไม่รู้จัก: '{outcome}'")
+
+    kind = "die" if is_death else "attempt"
+    bucket[kind] += 1
+    if is_attempt and rec[COL_ACCESS_7_2].strip() == "มี":
+        bucket["access"] += 1
+
+    sex_bucket = bucket["bySex"].setdefault(sex, {"die": 0, "attempt": 0})
+    sex_bucket[kind] += 1
+    age_bucket = bucket["byAge"].setdefault(group, {"die": 0, "attempt": 0})
+    age_bucket[kind] += 1
+    for col, method_name in METHOD_COLUMNS.items():
+        if rec[col].strip() == "มี":
+            bucket["byMethod"][method_name] = (
+                bucket["byMethod"].get(method_name, 0) + 1
+            )
+    for col, risk_name in RISK_COLUMNS.items():
+        if rec[col].strip() == "มี":
+            bucket["byRisk"][risk_name] = (
+                bucket["byRisk"].get(risk_name, 0) + 1
+            )
+
+
+def validate_record(rec: list[str]) -> tuple[str, str]:
+    """ตรวจจังหวัด/เดือน คืนค่า (จังหวัด, เดือน)"""
+    province = rec[COL_PROVINCE].strip()
+    if province not in PROVINCES:
+        raise ValueError(f"พบจังหวัดนอกเขตสุขภาพที่ 8: '{province}'")
+    month = month_key(rec)
+    if month not in FISCAL_MONTHS:
+        raise ValueError(f"พบเดือนนอกช่วงข้อมูล: '{month}'")
+    return province, month
+
+
 def aggregate(records: list[list[str]]) -> dict:
     """สรุปข้อมูลรายเคสเป็นยอดรวมราย จังหวัด x เดือน (ไม่มีข้อมูลรายบุคคล)"""
     result: dict[str, dict[str, dict]] = {}
     for rec in records:
-        province = rec[COL_PROVINCE].strip()
-        if province not in PROVINCES:
-            raise ValueError(f"พบจังหวัดนอกเขตสุขภาพที่ 8: '{province}'")
-        month = month_key(rec)
-        if month not in FISCAL_MONTHS:
-            raise ValueError(f"พบเดือนนอกช่วงข้อมูล: '{month}'")
-
+        province, month = validate_record(rec)
         bucket = result.setdefault(province, {}).setdefault(month, empty_bucket())
-        outcome = rec[COL_OUTCOME].strip()
-        sex = rec[COL_SEX].strip() or "ไม่ระบุ"
-        group = age_group(rec[COL_AGE])
+        apply_record(bucket, rec)
+    return result
 
-        is_death = outcome == OUTCOME_DEATH
-        is_attempt = outcome in OUTCOME_ATTEMPTS
-        if not is_death and not is_attempt:
-            raise ValueError(f"พบผลการกระทำที่ไม่รู้จัก: '{outcome}'")
 
-        kind = "die" if is_death else "attempt"
-        bucket[kind] += 1
-        if is_attempt and rec[COL_ACCESS_7_2].strip() == "มี":
-            bucket["access"] += 1
-
-        sex_bucket = bucket["bySex"].setdefault(sex, {"die": 0, "attempt": 0})
-        sex_bucket[kind] += 1
-        age_bucket = bucket["byAge"].setdefault(group, {"die": 0, "attempt": 0})
-        age_bucket[kind] += 1
-        for col, method_name in METHOD_COLUMNS.items():
-            if rec[col].strip() == "มี":
-                bucket["byMethod"][method_name] = (
-                    bucket["byMethod"].get(method_name, 0) + 1
-                )
-        for col, risk_name in RISK_COLUMNS.items():
-            if rec[col].strip() == "มี":
-                bucket["byRisk"][risk_name] = (
-                    bucket["byRisk"].get(risk_name, 0) + 1
-                )
+def aggregate_districts(records: list[list[str]]) -> dict:
+    """สรุปยอดรวมราย จังหวัด x อำเภอ x เดือน สำหรับ drill-down รายอำเภอ"""
+    result: dict[str, dict[str, dict[str, dict]]] = {}
+    for rec in records:
+        province, month = validate_record(rec)
+        district = district_of(rec)
+        bucket = (
+            result.setdefault(province, {})
+            .setdefault(district, {})
+            .setdefault(month, empty_bucket())
+        )
+        apply_record(bucket, rec)
     return result
 
 
@@ -308,7 +380,8 @@ def validate(data: dict, expected_total: int) -> None:
         raise ValueError(f"ยอดรวมไม่ตรง: aggregate ได้ {total} ต้นฉบับ {expected_total}")
 
 
-def build_output(data: dict, population: dict[str, int], hdc: dict) -> dict:
+def build_output(data: dict, population: dict[str, int], hdc: dict,
+                 districts: dict) -> dict:
     days_covered = (PERIOD_END - PERIOD_START).days + 1
     return {
         "meta": {
@@ -328,6 +401,7 @@ def build_output(data: dict, population: dict[str, int], hdc: dict) -> dict:
         "population": population,
         "hdc": hdc,
         "data": data,
+        "districts": districts,
     }
 
 
@@ -340,10 +414,20 @@ def main() -> int:
 
     data = aggregate(all_records)
     validate(data, len(all_records))
+    districts = aggregate_districts(all_records)
+    district_total = sum(
+        b["die"] + b["attempt"]
+        for prov in districts.values()
+        for dist in prov.values()
+        for b in dist.values()
+    )
+    if district_total != len(all_records):
+        raise ValueError(
+            f"ยอดรายอำเภอไม่ตรง: {district_total} เทียบต้นฉบับ {len(all_records)}")
     population = parse_population(RAW_DIR / POPULATION_FILE)
     hdc = parse_hdc(RAW_DIR / HDC_FILE)
 
-    output = build_output(data, population, hdc)
+    output = build_output(data, population, hdc, districts)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(
         json.dumps(output, ensure_ascii=False, indent=1), encoding="utf-8"
