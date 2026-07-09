@@ -799,28 +799,36 @@ function renderDistrictSection(provinceValue, months) {
     },
   });
 
-  /* 2. % ตรวจประเมินจิตเวช (ข้อ 7.2) รายอำเภอ */
-  const assessValues = order.map((d) =>
-    accessPercent(byDistrict[d].access, byDistrict[d].attempt));
+  /* 2. จำนวนผู้พยายามฯ ที่ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2) รายอำเภอ */
   drawChart("dAssessChart", {
     type: "bar",
     data: {
       labels: order,
-      datasets: [{
-        label: "% ตรวจประเมินจิตเวช",
-        data: assessValues,
-        backgroundColor: assessValues.map((v) =>
-          v >= DB.meta.kpi2Target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
-        borderRadius: 4,
-      }],
+      datasets: [
+        {
+          label: "ได้รับการตรวจประเมิน",
+          data: order.map((d) => byDistrict[d].access),
+          backgroundColor: COLORS.good + "d9",
+          borderRadius: 3,
+        },
+        {
+          label: "ยังไม่ได้รับ",
+          data: order.map((d) => byDistrict[d].attempt - byDistrict[d].access),
+          backgroundColor: OTHER_COLOR + "8c",
+          borderRadius: 3,
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
-      plugins: { legend: { display: false } },
       scales: {
-        x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } },
-        y: { grid: { display: false } },
+        x: {
+          stacked: true, beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "ราย" },
+        },
+        y: { stacked: true, grid: { display: false } },
       },
     },
   });
