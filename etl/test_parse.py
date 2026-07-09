@@ -84,8 +84,16 @@ class TestAggregate(unittest.TestCase):
     def test_district_of_prefers_event_address(self):
         rec = self.make_record()
         rec[parse.COL_DISTRICT] = "อ.เชียงคาน"
+        rec[parse.COL_ADDR_PROVINCE] = "จ.เลย"
         rec[parse.COL_FACILITY] = "โรงพยาบาลเลย"
         self.assertEqual(parse.district_of(rec), "เชียงคาน")
+
+    def test_district_of_ignores_event_address_from_other_province(self):
+        rec = self.make_record(province="หนองคาย")
+        rec[parse.COL_DISTRICT] = "อ.เมืองอุดรธานี"
+        rec[parse.COL_ADDR_PROVINCE] = "จ.อุดรธานี"
+        rec[parse.COL_FACILITY] = "โรงพยาบาลหนองคาย"
+        self.assertEqual(parse.district_of(rec), "เมืองหนองคาย")
 
     def test_district_of_falls_back_to_facility(self):
         rec = self.make_record()
@@ -99,6 +107,7 @@ class TestAggregate(unittest.TestCase):
             self.make_record(outcome="บาดเจ็บ"),
         ]
         records[0][parse.COL_DISTRICT] = "อ.เชียงคาน"
+        records[0][parse.COL_ADDR_PROVINCE] = "จ.เลย"
         records[1][parse.COL_FACILITY] = "โรงพยาบาลวังสะพุง"
         result = parse.aggregate_districts(records)
         self.assertEqual(result["เลย"]["เชียงคาน"]["2568-10"]["die"], 1)

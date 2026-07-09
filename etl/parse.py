@@ -37,6 +37,7 @@ COL_SEX = 6
 COL_MONTH = 15
 COL_YEAR = 16
 COL_DISTRICT = 24  # Add.S อำเภอที่เกิดเหตุ (ว่างราว 40% — ใช้สถานบริการเป็น fallback)
+COL_ADDR_PROVINCE = 25  # Add.S จังหวัดที่เกิดเหตุ เช่น 'จ.สกลนคร'
 COL_OUTCOME = 42
 COL_ACCESS_7_2 = 187  # 7.2 การตรวจประเมินตามมาตรฐานจิตเวชและการช่วยเหลือทางสังคมจิตใจ
 EXPECTED_COLUMNS = 202
@@ -200,11 +201,16 @@ def normalize_district(name: str) -> str:
 
 
 def district_of(record: list[str]) -> str:
-    """อำเภอของเคส: ใช้อำเภอที่เกิดเหตุ (Add.S) ก่อน ถ้าว่างใช้อำเภอของสถานบริการ"""
+    """อำเภอของเคส: ใช้อำเภอที่เกิดเหตุ (Add.S) เมื่อจังหวัดที่เกิดเหตุตรงกับ
+    จังหวัดที่รายงานเท่านั้น (กันอำเภอต่างจังหวัดปนเข้ามา) ไม่งั้นใช้อำเภอของสถานบริการ"""
+    report_province = record[COL_PROVINCE].strip()
     event_district = record[COL_DISTRICT].strip()
-    if event_district:
+    event_province = record[COL_ADDR_PROVINCE].strip()
+    if event_province.startswith("จ."):
+        event_province = event_province[2:].strip()
+    if event_district and event_province == report_province:
         return normalize_district(event_district)
-    return facility_district(record[COL_FACILITY].strip(), record[COL_PROVINCE].strip())
+    return facility_district(record[COL_FACILITY].strip(), report_province)
 
 
 def month_key(record: list[str]) -> str:
