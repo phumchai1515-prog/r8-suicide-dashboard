@@ -883,6 +883,72 @@ function renderTable(summary, months, provinceValue) {
   }
 }
 
+/* ป้ายผ่าน/ไม่ผ่านเกณฑ์ 7.2 ระดับอำเภอ */
+function districtBadge(assessed, attempts) {
+  if (attempts <= 0) return `<span class="cell-badge">ไม่มีผู้พยายามฯ</span>`;
+  const isPass = assessed >= DB.meta.kpi2Target;
+  return `<span class="cell-badge ${isPass ? "pass" : "fail"}">${isPass ? "ผ่าน" : "ไม่ผ่าน"}</span>`;
+}
+
+/* ตารางรายอำเภอทุกจังหวัด (แสดงเมื่อดูทั้งเขต) */
+function renderAllDistrictTable(provinceValue, months) {
+  const panel = document.getElementById("allDistrictPanel");
+  if (provinceValue !== "all") {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  document.querySelector("#allDistrictTable thead").innerHTML = `
+    <tr>
+      <th>จังหวัด</th>
+      <th>อำเภอ</th>
+      <th>ฆ่าตัวตายสำเร็จ</th>
+      <th>พยายามฯ</th>
+      <th>รวม</th>
+      <th>ตรวจประเมินจิตเวช (7.2)</th>
+      <th>% ประเมิน</th>
+      <th>เกณฑ์ 7.2 (≥${formatNumber(DB.meta.kpi2Target, 0)}%)</th>
+    </tr>`;
+  const tbody = document.querySelector("#allDistrictTable tbody");
+  tbody.textContent = "";
+
+  const makeRow = (provinceLabel, districtLabel, counts, isTotal) => {
+    const assessed = accessPercent(counts.access, counts.attempt);
+    const row = document.createElement("tr");
+    if (isTotal) row.className = "row-total";
+    row.innerHTML = `
+      <td>${provinceLabel}</td>
+      <td>${districtLabel}</td>
+      <td>${formatNumber(counts.die)}</td>
+      <td>${formatNumber(counts.attempt)}</td>
+      <td>${formatNumber(counts.die + counts.attempt)}</td>
+      <td>${formatNumber(counts.access)}</td>
+      <td>${counts.attempt > 0 ? formatNumber(assessed, 1) : "–"}</td>
+      <td>${districtBadge(assessed, counts.attempt)}</td>`;
+    return row;
+  };
+
+  const grand = { die: 0, attempt: 0, access: 0 };
+  for (const province of DB.provinces) {
+    const byDistrict = summarizeDistricts(province, months);
+    const order = Object.keys(byDistrict).sort((a, b) =>
+      (byDistrict[b].die + byDistrict[b].attempt) - (byDistrict[a].die + byDistrict[a].attempt));
+    const subtotal = { die: 0, attempt: 0, access: 0 };
+    order.forEach((district, i) => {
+      const counts = byDistrict[district];
+      subtotal.die += counts.die;
+      subtotal.attempt += counts.attempt;
+      subtotal.access += counts.access;
+      tbody.appendChild(makeRow(i === 0 ? province : "", district, counts, false));
+    });
+    grand.die += subtotal.die;
+    grand.attempt += subtotal.attempt;
+    grand.access += subtotal.access;
+    tbody.appendChild(makeRow("", `รวมจังหวัด${province}`, subtotal, true));
+  }
+  tbody.appendChild(makeRow("", "รวมเขตสุขภาพที่ 8", grand, true));
+}
+
 /* ตารางรายอำเภอ (เมื่อเลือกจังหวัด) — ไม่มีประชากร/HDC รายอำเภอ จึงแสดงจำนวนราย */
 function renderDistrictTable(province, months) {
   setText("tableTitle", `ตารางสรุปรายอำเภอ · จังหวัด${province}`);
@@ -908,11 +974,6 @@ function renderDistrictTable(province, months) {
 
   const makeRow = (name, counts, isTotal) => {
     const assessed = accessPercent(counts.access, counts.attempt);
-    const hasAttempts = counts.attempt > 0;
-    const isPass = assessed >= DB.meta.kpi2Target;
-    const badge = hasAttempts
-      ? `<span class="cell-badge ${isPass ? "pass" : "fail"}">${isPass ? "ผ่าน" : "ไม่ผ่าน"}</span>`
-      : `<span class="cell-badge">ไม่มีผู้พยายามฯ</span>`;
     const row = document.createElement("tr");
     if (isTotal) row.className = "row-total";
     row.innerHTML = `
@@ -921,8 +982,8 @@ function renderDistrictTable(province, months) {
       <td>${formatNumber(counts.attempt)}</td>
       <td>${formatNumber(counts.die + counts.attempt)}</td>
       <td>${formatNumber(counts.access)}</td>
-      <td>${hasAttempts ? formatNumber(assessed, 1) : "–"}</td>
-      <td>${badge}</td>`;
+      <td>${counts.attempt > 0 ? formatNumber(assessed, 1) : "–"}</td>
+      <td>${districtBadge(assessed, counts.attempt)}</td>`;
     return row;
   };
 
@@ -1021,6 +1082,7 @@ function render() {
   renderRiskChart(summary);
   renderRiskSmallMultiples(provinceValue, months);
   renderTable(allProvinceSummary, months, provinceValue);
+  renderAllDistrictTable(provinceValue, months);
 }
 
 function populateProvinceFilter() {
