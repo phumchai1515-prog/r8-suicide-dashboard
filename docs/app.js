@@ -371,7 +371,44 @@ function renderTrendChart(summary, months) {
   });
 }
 
-function renderProvinceRateChart(summary, months) {
+function renderProvinceRateChart(summary, months, provinceValue) {
+  const box = document.getElementById("provinceRateChart").parentElement;
+
+  /* เลือกจังหวัด → แสดงจำนวนฆ่าตัวตายสำเร็จรายอำเภอ (ไม่มีประชากรรายอำเภอสำหรับอัตรา) */
+  if (provinceValue !== "all") {
+    setText("rateTitle", `ฆ่าตัวตายสำเร็จรายอำเภอ · จังหวัด${provinceValue}`);
+    setText("rateSub", "จำนวนราย (ไม่มีข้อมูลประชากรรายอำเภอ จึงไม่คำนวณอัตราต่อแสน)");
+    const byDistrict = summarizeDistricts(provinceValue, months);
+    const order = Object.keys(byDistrict)
+      .sort((a, b) => byDistrict[b].die - byDistrict[a].die);
+    box.style.height = `${Math.max(340, order.length * DISTRICT_ROW_PX + 80)}px`;
+    drawChart("provinceRateChart", {
+      type: "bar",
+      data: {
+        labels: order,
+        datasets: [{
+          label: "ฆ่าตัวตายสำเร็จ",
+          data: order.map((d) => byDistrict[d].die),
+          backgroundColor: COLORS.death + "d9",
+          borderRadius: 5,
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "ราย" } },
+          y: { grid: { display: false } },
+        },
+      },
+    });
+    return;
+  }
+
+  setText("rateTitle", "อัตราการฆ่าตัวตายสำเร็จรายจังหวัด");
+  setText("rateSub", `ต่อแสนประชากร เทียบเป้าหมาย ≤ ${formatNumber(DB.meta.kpi1Target, 0)}`);
+  box.style.height = "340px";
   const days = daysCovered(months);
   const rates = DB.provinces.map((p) =>
     suicideRate((summary.byProvince[p] || { die: 0 }).die, DB.population[p]));
@@ -416,7 +453,11 @@ function renderProvinceRateChart(summary, months) {
   });
 }
 
-function renderAccessChart(summary, months) {
+function renderAccessChart(summary, months, provinceValue) {
+  /* HDC มีข้อมูลแค่ระดับจังหวัด — เมื่อเลือกจังหวัดจะไฮไลต์จังหวัดนั้นแทน */
+  setText("accessSub", provinceValue === "all"
+    ? "สูตร 100 × (506S ÷ HDC) เทียบเป้าหมาย ≥ 70%"
+    : `สูตร 100 × (506S ÷ HDC) — HDC ไม่มีข้อมูลรายอำเภอ จึงแสดงระดับจังหวัด (เน้นจังหวัด${provinceValue})`);
   const values = DB.provinces.map((p) => {
     const row = summary.byProvince[p] || { attempt: 0 };
     return accessPercent(row.attempt, hdcCount([p], months));
@@ -429,8 +470,11 @@ function renderAccessChart(summary, months) {
         {
           label: "% เข้าถึงบริการ = 100 × (506S ÷ HDC)",
           data: values,
-          backgroundColor: values.map((v) =>
-            v >= DB.meta.kpi2Target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+          backgroundColor: values.map((v, i) => {
+            const base = v >= DB.meta.kpi2Target ? COLORS.good : COLORS.attempt;
+            const isDimmed = provinceValue !== "all" && DB.provinces[i] !== provinceValue;
+            return base + (isDimmed ? "40" : "d9");
+          }),
           borderRadius: 6,
         },
         {
@@ -455,27 +499,59 @@ function renderAccessChart(summary, months) {
   });
 }
 
-/* ตัวชี้วัดรอง: % ผู้พยายามฯ ที่ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2 จาก 506S) */
-function renderAssessmentChart(summary) {
-  const values = DB.provinces.map((p) => {
-    const row = summary.byProvince[p] || { access: 0, attempt: 0 };
-    return accessPercent(row.access, row.attempt);
-  });
+/* ตัวชี้วัดรอง: % ผู้พยายามฯ ที่ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2 จาก 506S)
+   ดูทั้งเขต = รายจังหวัด / เลือกจังหวัด = รายอำเภอ เทียบเกณฑ์ 70% */
+function renderAssessmentChart(summary, months, provinceValue) {
+  const box = document.getElementById("assessmentChart").parentElement;
+  let labels, values;
+  if (provinceValue === "all") {
+    setText("assessTitle", "ตัวชี้วัดรอง · การตรวจประเมินจิตเวช");
+    setText("assessSub", "ร้อยละผู้พยายามฯ ที่ได้รับการตรวจประเมิน (ข้อ 7.2 แบบ 506S)");
+    box.style.height = "280px";
+    labels = DB.provinces;
+    values = labels.map((p) => {
+      const row = summary.byProvince[p] || { access: 0, attempt: 0 };
+      return accessPercent(row.access, row.attempt);
+    });
+  } else {
+    setText("assessTitle", `การตรวจประเมินจิตเวชรายอำเภอ · จังหวัด${provinceValue}`);
+    setText("assessSub", `ร้อยละผู้พยายามฯ ที่ได้รับการตรวจประเมิน (ข้อ 7.2) เทียบเกณฑ์ ≥ ${formatNumber(DB.meta.kpi2Target, 0)}%`);
+    const byDistrict = summarizeDistricts(provinceValue, months);
+    labels = Object.keys(byDistrict).sort((a, b) =>
+      (byDistrict[b].die + byDistrict[b].attempt) - (byDistrict[a].die + byDistrict[a].attempt));
+    values = labels.map((d) =>
+      accessPercent(byDistrict[d].access, byDistrict[d].attempt));
+    box.style.height = `${Math.max(280, labels.length * DISTRICT_ROW_PX + 80)}px`;
+  }
+
   drawChart("assessmentChart", {
     type: "bar",
     data: {
-      labels: DB.provinces,
-      datasets: [{
-        label: "% ตรวจประเมินจิตเวช (ข้อ 7.2)",
-        data: values,
-        backgroundColor: COLORS.indigo + "d9",
-        borderRadius: 6,
-      }],
+      labels,
+      datasets: [
+        {
+          label: "% ตรวจประเมินจิตเวช (ข้อ 7.2)",
+          data: values,
+          backgroundColor: provinceValue === "all"
+            ? COLORS.indigo + "d9"
+            : values.map((v) =>
+                v >= DB.meta.kpi2Target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+          borderRadius: 6,
+        },
+        {
+          label: `เกณฑ์ ≥ ${formatNumber(DB.meta.kpi2Target, 0)}%`,
+          data: labels.map(() => DB.meta.kpi2Target),
+          type: "line",
+          borderColor: COLORS.death,
+          borderDash: [7, 6],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+      ],
     },
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
-      plugins: { legend: { display: false } },
       scales: {
         x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } },
         y: { grid: { display: false } },
@@ -1073,9 +1149,9 @@ function render() {
   renderInsights(allProvinceSummary, months);
   renderDistrictSection(provinceValue, months);
   renderTrendChart(summary, months);
-  renderProvinceRateChart(allProvinceSummary, months);
-  renderAccessChart(allProvinceSummary, months);
-  renderAssessmentChart(allProvinceSummary);
+  renderProvinceRateChart(allProvinceSummary, months, provinceValue);
+  renderAccessChart(allProvinceSummary, months, provinceValue);
+  renderAssessmentChart(allProvinceSummary, months, provinceValue);
   renderSexChart(summary);
   renderAgeChart(summary);
   renderMethodChart(summary);
