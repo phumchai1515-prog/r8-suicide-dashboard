@@ -335,7 +335,8 @@ def main() -> int:
     rate = deaths / population["รวม"] * 100_000
     print(f"\nรวม {len(all_records)} เคส | เสียชีวิต {deaths} | พยายาม {attempts}")
     print(f"KPI1 อัตราฆ่าตัวตายสำเร็จสะสม: {rate:.2f} ต่อแสน (เป้า ≤ {KPI1_TARGET})")
-    print(f"KPI2 เข้าถึงบริการ (HDC/506S): {hdc_total}/{attempts} = {hdc_total / attempts * 100:.1f}% (เป้า ≥ {KPI2_TARGET}%)")
+    kpi2 = min(100.0, hdc_total / attempts * 100)
+    print(f"KPI2 เข้าถึงบริการ (HDC/506S เพดาน 100%): {hdc_total}/{attempts} = {kpi2:.1f}% (เป้า ≥ {KPI2_TARGET}%)")
     print(f"ตัวชี้วัดรอง ตรวจประเมินจิตเวช (ข้อ 7.2): {assessed}/{attempts} = {assessed / attempts * 100:.1f}%")
     print(f"\nเขียนผลลัพธ์: {OUTPUT_PATH}")
     return 0

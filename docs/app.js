@@ -25,6 +25,7 @@ const COLORS = {
 
 const DAYS_PER_YEAR = 365;
 const PER_HUNDRED_THOUSAND = 100000;
+const MAX_PERCENT = 100; // เพดานร้อยละการเข้าถึงบริการ ไม่ให้เกิน 100
 
 const charts = {};
 let DB = null;
@@ -107,7 +108,8 @@ function annualize(rate, days) {
 }
 
 function accessPercent(access, attempts) {
-  return attempts > 0 ? (access / attempts) * 100 : 0;
+  if (attempts <= 0) return 0;
+  return Math.min(MAX_PERCENT, (access / attempts) * 100);
 }
 
 /* จำนวนผู้เข้าถึงบริการจาก HDC — ทั้งปีใช้ยอดคนไม่ซ้ำทั้งปี,
@@ -150,8 +152,8 @@ function renderKpis(summary, provinces, months) {
   setText("kpi2Target", formatNumber(DB.meta.kpi2Target, 0));
   setText("kpi2Detail",
     `เข้าถึงบริการ (HDC) ${formatNumber(hdcAccess)} ราย ` +
-    `เทียบผู้พยายามฯ จากระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย` +
-    (access > 100 ? " · เกิน 100% ได้ เนื่องจาก HDC ครอบคลุมมากกว่ารายงาน 506S" : ""));
+    `เทียบผู้พยายามฯ จากระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย ` +
+    `(เพดานไม่เกินร้อยละ 100)`);
   setBadge("kpi2Badge", access >= DB.meta.kpi2Target);
 
   setText("totalDeaths", formatNumber(summary.die));
@@ -265,7 +267,7 @@ function renderAccessChart(summary, months) {
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
-      scales: { x: { beginAtZero: true, title: { display: true, text: "%" } } },
+      scales: { x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } } },
     },
   });
 }
