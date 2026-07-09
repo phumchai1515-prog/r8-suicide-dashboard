@@ -1,0 +1,148 @@
+{
+ "meta": {
+  "generatedAt": "2026-07-09T23:01:39",
+  "fiscalYear": 2569,
+  "asOfLabel": "ข้อมูลสะสมปีงบประมาณ 2569 (ณ 9 กรกฎาคม 2569)",
+  "targets": {
+   "round6": 35.0,
+   "round9": 37.0,
+   "round12": 40.0
+  },
+  "currentRound": "round9",
+  "populationYear": 2567,
+  "source": "ระบบคลังข้อมูลด้านการแพทย์และสุขภาพ (HDC) และประชากรกลางปี 2567 กองยุทธศาสตร์และแผนงาน"
+ },
+ "provinces": [
+  "เลย",
+  "หนองบัวลำภู",
+  "อุดรธานี",
+  "หนองคาย",
+  "บึงกาฬ",
+  "สกลนคร",
+  "นครพนม"
+ ],
+ "population": {
+  "รวม": 5457956,
+  "บึงกาฬ": 418738,
+  "เลย": 629607,
+  "หนองคาย": 507881,
+  "หนองบัวลำภู": 504887,
+  "อุดรธานี": 1547152,
+  "นครพนม": 710746,
+  "สกลนคร": 1138945
+ },
+ "data": {
+  "บึงกาฬ": {
+   "old": 999,
+   "new": 872,
+   "total": 1871,
+   "accessRate": 125.91,
+   "noRepeat": 1449,
+   "kpi": 36.88,
+   "pop1560": 285294,
+   "estimated": 1486,
+   "follow1": 805,
+   "follow1NoRepeat": 758,
+   "follow2": 575,
+   "follow2NoRepeat": 548
+  },
+  "หนองบัวลำภู": {
+   "old": 1048,
+   "new": 700,
+   "total": 1748,
+   "accessRate": 97.87,
+   "noRepeat": 1527,
+   "kpi": 34.83,
+   "pop1560": 342916,
+   "estimated": 1786,
+   "follow1": 911,
+   "follow1NoRepeat": 906,
+   "follow2": 624,
+   "follow2NoRepeat": 622
+  },
+  "อุดรธานี": {
+   "old": 1215,
+   "new": 1861,
+   "total": 3076,
+   "accessRate": 55.92,
+   "noRepeat": 2343,
+   "kpi": 10.07,
+   "pop1560": 1056114,
+   "estimated": 5501,
+   "follow1": 850,
+   "follow1NoRepeat": 831,
+   "follow2": 561,
+   "follow2NoRepeat": 554
+  },
+  "เลย": {
+   "old": 393,
+   "new": 828,
+   "total": 1221,
+   "accessRate": 57.03,
+   "noRepeat": 826,
+   "kpi": 6.54,
+   "pop1560": 411013,
+   "estimated": 2141,
+   "follow1": 365,
+   "follow1NoRepeat": 358,
+   "follow2": 144,
+   "follow2NoRepeat": 140
+  },
+  "หนองคาย": {
+   "old": 518,
+   "new": 1234,
+   "total": 1752,
+   "accessRate": 98.21,
+   "noRepeat": 1356,
+   "kpi": 17.1,
+   "pop1560": 342430,
+   "estimated": 1784,
+   "follow1": 498,
+   "follow1NoRepeat": 475,
+   "follow2": 321,
+   "follow2NoRepeat": 305
+  },
+  "สกลนคร": {
+   "old": 2021,
+   "new": 1572,
+   "total": 3593,
+   "accessRate": 88.54,
+   "noRepeat": 2833,
+   "kpi": 16.04,
+   "pop1560": 779107,
+   "estimated": 4058,
+   "follow1": 1284,
+   "follow1NoRepeat": 1235,
+   "follow2": 665,
+   "follow2NoRepeat": 651
+  },
+  "นครพนม": {
+   "old": 1108,
+   "new": 2144,
+   "total": 3252,
+   "accessRate": 128.54,
+   "noRepeat": 2402,
+   "kpi": 41.03,
+   "pop1560": 485755,
+   "estimated": 2530,
+   "follow1": 1549,
+   "follow1NoRepeat": 1524,
+   "follow2": 1051,
+   "follow2NoRepeat": 1038
+  },
+  "รวม": {
+   "old": 7302,
+   "new": 9211,
+   "total": 16513,
+   "accessRate": 85.62,
+   "noRepeat": 12736,
+   "kpi": 20.0,
+   "pop1560": 3702629,
+   "estimated": 19286,
+   "follow1": 6262,
+   "follow1NoRepeat": 6087,
+   "follow2": 3941,
+   "follow2NoRepeat": 3858
+  }
+ }
+}

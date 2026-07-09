@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Dashboard SMI-V เขตสุขภาพที่ 8</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container topbar-inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M2 16 L7 9 L11 12 L18 3" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="18" cy="3" r="2" fill="#059669"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <p class="brand-kicker">Mental Health Surveillance</p>
+        <h1>เขตสุขภาพที่ 8 · ปีงบประมาณ 2569</h1>
+      </div>
+    </div>
+    <nav class="nav-links" aria-label="เลือก Dashboard">
+      <a href="index.html">การฆ่าตัวตาย</a>
+      <a href="smiv.html" class="active">SMI-V</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="hero-head reveal">
+    <span class="hero-kicker"><span class="dot"></span> ระบบรายงานตัวชี้วัด SMI-V</span>
+    <h2>ผู้ป่วยจิตเวชและสารเสพติดที่มีความเสี่ยงสูง<br>ต่อการก่อความรุนแรง <span class="accent">(SMI-V)</span></h2>
+    <p class="hero-sub">เขตสุขภาพที่ 8 — เลย · หนองบัวลำภู · อุดรธานี · หนองคาย · บึงกาฬ · สกลนคร · นครพนม</p>
+    <p class="hero-period" id="periodLabel"></p>
+  </section>
+
+  <section class="kpi-hero" aria-label="ตัวชี้วัดหลัก">
+    <article class="kpi-card reveal d1" id="kpi1Card">
+      <div class="kpi-info">
+        <p class="kpi-label">ตัวชี้วัดหลัก</p>
+        <p class="kpi-name">เข้าถึงบริการต่อเนื่องและไม่ก่อความรุนแรงซ้ำ</p>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpi1Value">–</span>
+          <span class="kpi-unit">%</span>
+        </div>
+        <p class="kpi-target" id="kpi1Target"></p>
+        <p class="kpi-extra" id="kpi1Detail"></p>
+        <span class="kpi-badge" id="kpi1Badge">–</span>
+      </div>
+      <div class="kpi-visual">
+        <div class="ring" id="kpi1Ring" role="img" aria-label="ร้อยละดูแลต่อเนื่องไม่ก่อความรุนแรงซ้ำ">
+          <div class="ring-label">
+            <div class="ring-num" id="kpi1RingNum">–</div>
+            <div class="ring-cap">ดูแลต่อเนื่อง</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="kpi-card reveal d2" id="kpi2Card">
+      <div class="kpi-info">
+        <p class="kpi-label">ตัวชี้วัดย่อย 1.1</p>
+        <p class="kpi-name">อัตราการเข้าถึงบริการ (SMI-V Accessibility Rate)</p>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpi2Value">–</span>
+          <span class="kpi-unit">%</span>
+        </div>
+        <p class="kpi-target" id="kpi2Target"></p>
+        <p class="kpi-extra" id="kpi2Detail"></p>
+        <span class="kpi-badge" id="kpi2Badge">–</span>
+      </div>
+      <div class="kpi-visual">
+        <div class="ring" id="kpi2Ring" role="img" aria-label="อัตราการเข้าถึงบริการ">
+          <div class="ring-label">
+            <div class="ring-num" id="kpi2RingNum">–</div>
+            <div class="ring-cap">เข้าถึงบริการ</div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="stat-strip reveal d3" aria-label="สรุปตัวเลข">
+    <div class="stat" style="--stat-color:#0284c7">
+      <span class="stat-dot"></span>
+      <div><div class="stat-num" id="totalPatients">–</div><div class="stat-cap">ผู้ป่วย SMI-V ทั้งหมด (คน)</div></div>
+    </div>
+    <div class="stat" style="--stat-color:#f59e0b">
+      <span class="stat-dot"></span>
+      <div><div class="stat-num" id="newPatients">–</div><div class="stat-cap">รายใหม่ปีงบนี้ (คน)</div></div>
+    </div>
+    <div class="stat" style="--stat-color:#6366f1">
+      <span class="stat-dot"></span>
+      <div><div class="stat-num" id="estimatedPatients">–</div><div class="stat-cap">ประมาณการในพื้นที่ (คน)</div></div>
+    </div>
+    <div class="stat" style="--stat-color:#059669">
+      <span class="stat-dot"></span>
+      <div><div class="stat-num" id="noRepeatPatients">–</div><div class="stat-cap">ไม่ก่อความรุนแรงซ้ำ (คน)</div></div>
+    </div>
+  </section>
+
+  <section class="insights reveal d4" aria-label="ข้อค้นพบสำคัญ">
+    <div class="section-head">
+      <span class="bar"></span>
+      <h3>ข้อค้นพบสำคัญ</h3>
+      <span class="hint">สร้างอัตโนมัติจากข้อมูล</span>
+    </div>
+    <div class="insight-grid" id="insightGrid"></div>
+  </section>
+
+  <section class="grid reveal d5">
+    <article class="panel">
+      <p class="panel-title">ร้อยละเข้าถึงบริการต่อเนื่องและไม่ก่อความรุนแรงซ้ำ รายจังหวัด</p>
+      <p class="panel-sub">สูตร: ติดตามอย่างน้อย 2 ครั้งและไม่ก่อความรุนแรงซ้ำ ÷ ประมาณการผู้ป่วยในพื้นที่ × 100</p>
+      <div class="chart-box tall"><canvas id="kpiChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <p class="panel-title">อัตราการเข้าถึงบริการรายจังหวัด</p>
+      <p class="panel-sub">สูตร: ผู้ป่วยทั้งหมดสะสม ÷ ประมาณการผู้ป่วยในพื้นที่ × 100 (เกิน 100% ได้เมื่อพบผู้ป่วยมากกว่าประมาณการ)</p>
+      <div class="chart-box tall"><canvas id="accessChart"></canvas></div>
+    </article>
+  </section>
+
+  <section class="grid grid-2">
+    <article class="panel">
+      <p class="panel-title">ผู้ป่วยรายเก่า/รายใหม่ เทียบประมาณการ</p>
+      <p class="panel-sub">รายเก่าก่อนปีงบ + รายใหม่ปีงบนี้ เทียบเส้นประมาณการในพื้นที่</p>
+      <div class="chart-box"><canvas id="patientsChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <p class="panel-title">การติดตามดูแลต่อเนื่อง</p>
+      <p class="panel-sub">จำนวนผู้ป่วยที่ได้รับการติดตาม (คน)</p>
+      <div class="chart-box"><canvas id="followChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <p class="panel-title">อัตราผู้ป่วย SMI-V ต่อแสนประชากร</p>
+      <p class="panel-sub">เทียบประชากรกลางปี 2567</p>
+      <div class="chart-box"><canvas id="rateChart"></canvas></div>
+    </article>
+
+    <article class="panel">
+      <p class="panel-title">ไม่ก่อความรุนแรงซ้ำ</p>
+      <p class="panel-sub">จำนวนผู้ป่วยสะสมที่ไม่ก่อความรุนแรงซ้ำในปีงบประมาณ (คน)</p>
+      <div class="chart-box"><canvas id="noRepeatChart"></canvas></div>
+    </article>
+  </section>
+
+  <section class="grid">
+    <article class="panel">
+      <p class="panel-title">ตารางสรุปรายจังหวัด</p>
+      <p class="panel-sub" id="tableSub"></p>
+      <div class="table-wrap">
+        <table id="smivTable">
+          <thead>
+            <tr>
+              <th>จังหวัด</th>
+              <th>ประชากร 2567</th>
+              <th>รายเก่า</th>
+              <th>รายใหม่</th>
+              <th>ทั้งหมด</th>
+              <th>ต่อแสนประชากร</th>
+              <th>ประมาณการ</th>
+              <th>% เข้าถึงบริการ</th>
+              <th>ติดตาม ≥2 + ไม่ก่อซ้ำ</th>
+              <th>% ดูแลต่อเนื่อง</th>
+              <th>เกณฑ์</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <section class="notes">
+    <h3>หมายเหตุและนิยาม</h3>
+    <ul>
+      <li>SMI-V (Severe Mental Illness with High Risk to Violence) = ผู้ป่วยจิตเวชและสารเสพติดที่มีความเสี่ยงสูงต่อการก่อความรุนแรง (รหัส 1B030-33)</li>
+      <li>ตัวชี้วัดหลัก = ผู้ป่วยที่ได้รับการติดตามอย่างน้อย 2 ครั้งและไม่ก่อความรุนแรงซ้ำในปีงบประมาณ ÷ ประมาณการผู้ป่วย SMI-V ในพื้นที่ × 100 — เป้าหมาย: รอบ 6 เดือน ≥ 35% · รอบ 9 เดือน ≥ 37% · รอบ 12 เดือน ≥ 40% (สถานะปัจจุบันเทียบเป้ารอบ 9 เดือน)</li>
+      <li>ประมาณการผู้ป่วยในพื้นที่คำนวณจากประชากรกลางปีอายุ 15-60 ปี ย้อนหลัง 2 ปี ตามสูตรของ HDC</li>
+      <li>อัตราผู้ป่วยต่อแสนประชากรในหน้านี้ใช้ประชากรกลางปี 2567 (ทุกกลุ่มอายุ)</li>
+      <li>ข้อมูลเป็นยอดสะสมระดับจังหวัด จากระบบ HDC — ไม่มีข้อมูลรายเดือน/รายอำเภอในไฟล์ต้นทาง</li>
+      <li>Dashboard นี้แสดงเฉพาะข้อมูลสรุปรวม ไม่มีข้อมูลรายบุคคล</li>
+    </ul>
+  </section>
+
+  <section class="hotline" aria-label="สายด่วนสุขภาพจิต">
+    <div class="hotline-num">1323</div>
+    <p class="hotline-text"><strong>สายด่วนสุขภาพจิต</strong> ให้คำปรึกษาฟรี ตลอด 24 ชั่วโมง<br>
+    พบเห็นผู้มีอาการทางจิตเสี่ยงก่อความรุนแรง แจ้งสายด่วน 1669 หรือ 191</p>
+  </section>
+
+  <footer class="site-footer">
+    <span>อัปเดตข้อมูลล่าสุด: <span id="generatedAt">–</span></span>
+    <span>แหล่งข้อมูล: HDC กระทรวงสาธารณสุข</span>
+  </footer>
+
+</main>
+
+<script src="smiv.js"></script>
+</body>
+</html>

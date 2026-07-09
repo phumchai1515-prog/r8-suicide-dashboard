@@ -104,6 +104,21 @@ body::before {
   text-overflow: ellipsis;
 }
 
+.nav-links { display: flex; gap: 6px; margin-left: 14px; }
+.nav-links a {
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.nav-links a:hover { color: var(--accent); background: var(--accent-soft); }
+.nav-links a.active { color: var(--accent); background: var(--accent-soft); border-color: #bfdff2; }
+
 .filters {
   margin-left: auto;
   display: flex;

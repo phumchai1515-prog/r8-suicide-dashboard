@@ -1,0 +1,437 @@
+/* Dashboard SMI-V เขตสุขภาพที่ 8 — อ่าน smiv-data.json (ยอดสะสมรายจังหวัด) แล้ว render */
+
+"use strict";
+
+const COLORS = {
+  death: "#dc2626",
+  attempt: "#f59e0b",
+  good: "#059669",
+  accent: "#0284c7",
+  teal: "#0d9488",
+  indigo: "#6366f1",
+  muted: "#5b6b80",
+  grid: "rgba(23, 32, 51, 0.07)",
+};
+
+const PER_HUNDRED_THOUSAND = 100000;
+const COUNT_UP_MS = 750;
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const ROUND_LABELS = {
+  round6: "รอบ 6 เดือน",
+  round9: "รอบ 9 เดือน",
+  round12: "รอบ 12 เดือน",
+};
+
+let DB = null;
+
+/* ---------- utilities ---------- */
+
+function formatNumber(value, digits = 0) {
+  return value.toLocaleString("th-TH", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function countUp(id, target, digits = 0) {
+  const el = document.getElementById(id);
+  if (REDUCED_MOTION) {
+    el.textContent = formatNumber(target, digits);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min(1, (now - start) / COUNT_UP_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = formatNumber(target * eased, digits);
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function setBadge(id, isPass) {
+  const badge = document.getElementById(id);
+  badge.textContent = isPass ? "ผ่านเป้าหมาย" : "ไม่ผ่านเป้าหมาย";
+  badge.className = `kpi-badge ${isPass ? "pass" : "fail"}`;
+}
+
+function setCardStatus(id, isPass) {
+  document.getElementById(id).className = `kpi-card reveal ${isPass ? "pass" : "fail"}`;
+}
+
+function setRing(ringId, numId, percent, displayText, isPass) {
+  const ring = document.getElementById(ringId);
+  const color = isPass ? "var(--good)" : "var(--bad)";
+  const pct = Math.max(0, Math.min(100, percent));
+  ring.style.background =
+    `radial-gradient(closest-side, var(--surface) 82%, transparent 83% 100%), ` +
+    `conic-gradient(${color} ${pct}%, var(--line-soft) 0)`;
+  setText(numId, displayText);
+}
+
+function currentTarget() {
+  return DB.meta.targets[DB.meta.currentRound];
+}
+
+function patientRate(province) {
+  return DB.data[province].total / DB.population[province] * PER_HUNDRED_THOUSAND;
+}
+
+/* ---------- KPI hero ---------- */
+
+function renderKpis() {
+  const total = DB.data["รวม"];
+  const target = currentTarget();
+  const targetText =
+    `เป้าหมาย: รอบ 6 เดือน ≥ ${DB.meta.targets.round6}% · รอบ 9 เดือน ≥ ${DB.meta.targets.round9}% · ` +
+    `รอบ 12 เดือน ≥ ${DB.meta.targets.round12}% (สถานะปัจจุบันเทียบ${ROUND_LABELS[DB.meta.currentRound]})`;
+
+  const kpi1Pass = total.kpi >= target;
+  countUp("kpi1Value", total.kpi, 1);
+  setText("kpi1Target", targetText);
+  setText("kpi1Detail",
+    `ติดตามอย่างน้อย 2 ครั้งและไม่ก่อความรุนแรงซ้ำ ${formatNumber(total.follow2NoRepeat)} คน ` +
+    `จากประมาณการผู้ป่วยในพื้นที่ ${formatNumber(total.estimated)} คน`);
+  setBadge("kpi1Badge", kpi1Pass);
+  setCardStatus("kpi1Card", kpi1Pass);
+  setRing("kpi1Ring", "kpi1RingNum", total.kpi, `${formatNumber(total.kpi, 1)}%`, kpi1Pass);
+
+  const kpi2Pass = total.accessRate >= target;
+  countUp("kpi2Value", total.accessRate, 1);
+  setText("kpi2Target", targetText);
+  setText("kpi2Detail",
+    `ผู้ป่วยสะสม ${formatNumber(total.total)} คน จากประมาณการ ${formatNumber(total.estimated)} คน ` +
+    `(เกิน 100% ได้เมื่อพบผู้ป่วยจริงมากกว่าประมาณการ)`);
+  setBadge("kpi2Badge", kpi2Pass);
+  setCardStatus("kpi2Card", kpi2Pass);
+  setRing("kpi2Ring", "kpi2RingNum", total.accessRate,
+    `${formatNumber(total.accessRate, 1)}%`, kpi2Pass);
+
+  countUp("totalPatients", total.total);
+  countUp("newPatients", total.new);
+  countUp("estimatedPatients", total.estimated);
+  countUp("noRepeatPatients", total.noRepeat);
+}
+
+/* ---------- ข้อค้นพบสำคัญ ---------- */
+
+function renderInsights() {
+  const target = currentTarget();
+  const items = [];
+
+  const passed = DB.provinces.filter((p) => DB.data[p].kpi >= target);
+  const failed = DB.provinces
+    .filter((p) => DB.data[p].kpi < target)
+    .sort((a, b) => DB.data[a].kpi - DB.data[b].kpi);
+  if (passed.length > 0) {
+    items.push({ tone: "good",
+      text: `จังหวัดที่ผ่านเป้า${ROUND_LABELS[DB.meta.currentRound]} (≥ ${target}%): ` +
+        passed.map((p) => `<strong>${p}</strong> (${formatNumber(DB.data[p].kpi, 1)}%)`).join(" · ") });
+  }
+  if (failed.length > 0) {
+    items.push({ tone: "bad",
+      text: `จังหวัดที่ยังไม่ผ่านเป้า เรียงจากต่ำสุด: ` +
+        failed.slice(0, 3).map((p) => `<strong>${p}</strong> (${formatNumber(DB.data[p].kpi, 1)}%)`).join(" · ") +
+        (failed.length > 3 ? ` และอีก ${failed.length - 3} จังหวัด` : "") });
+  }
+
+  const bestAccess = [...DB.provinces].sort(
+    (a, b) => DB.data[b].accessRate - DB.data[a].accessRate)[0];
+  const worstAccess = [...DB.provinces].sort(
+    (a, b) => DB.data[a].accessRate - DB.data[b].accessRate)[0];
+  items.push({ tone: "accent",
+    text: `การเข้าถึงบริการสูงสุด <strong>${bestAccess}</strong> (${formatNumber(DB.data[bestAccess].accessRate, 1)}%) · ` +
+      `ต่ำสุด <strong>${worstAccess}</strong> (${formatNumber(DB.data[worstAccess].accessRate, 1)}%)` });
+
+  const topRate = [...DB.provinces].sort((a, b) => patientRate(b) - patientRate(a))[0];
+  items.push({ tone: "warn",
+    text: `อัตราผู้ป่วย SMI-V สูงสุด: <strong>${topRate}</strong> ` +
+      `${formatNumber(patientRate(topRate), 1)} ต่อแสนประชากร ` +
+      `(${formatNumber(DB.data[topRate].total)} คน)` });
+
+  const grid = document.getElementById("insightGrid");
+  grid.textContent = "";
+  for (const item of items) {
+    const div = document.createElement("div");
+    div.className = `insight ${item.tone === "accent" ? "" : item.tone}`;
+    div.innerHTML = item.text; // เนื้อหาจาก whitelist จังหวัด/ตัวเลขเท่านั้น
+    grid.appendChild(div);
+  }
+}
+
+/* ---------- charts ---------- */
+
+function initChartTheme() {
+  Chart.defaults.font.family = '"IBM Plex Sans Thai", "Sarabun", sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = COLORS.muted;
+  Chart.defaults.borderColor = COLORS.grid;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.legend.labels.pointStyle = "rectRounded";
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(255, 255, 255, 0.97)";
+  Chart.defaults.plugins.tooltip.titleColor = "#172033";
+  Chart.defaults.plugins.tooltip.bodyColor = "#5b6b80";
+  Chart.defaults.plugins.tooltip.borderColor = "rgba(23, 32, 51, 0.12)";
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.padding = 10;
+  Chart.defaults.plugins.tooltip.cornerRadius = 8;
+}
+
+function targetLineDataset(label, value) {
+  return {
+    label,
+    data: DB.provinces.map(() => value),
+    type: "line",
+    borderColor: COLORS.death,
+    borderDash: [7, 6],
+    borderWidth: 1.5,
+    pointRadius: 0,
+  };
+}
+
+function renderKpiChart() {
+  const target = currentTarget();
+  const values = DB.provinces.map((p) => DB.data[p].kpi);
+  new Chart(document.getElementById("kpiChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [
+        {
+          label: "% ดูแลต่อเนื่องและไม่ก่อความรุนแรงซ้ำ",
+          data: values,
+          backgroundColor: values.map((v) =>
+            v >= target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+          borderRadius: 6,
+        },
+        targetLineDataset(`เป้า${ROUND_LABELS[DB.meta.currentRound]} ≥ ${target}%`, target),
+        targetLineDataset(`เป้ารอบ 12 เดือน ≥ ${DB.meta.targets.round12}%`, DB.meta.targets.round12),
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "%" } },
+      },
+    },
+  });
+}
+
+function renderAccessChart() {
+  new Chart(document.getElementById("accessChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [{
+        label: "% เข้าถึงบริการ (สะสม)",
+        data: DB.provinces.map((p) => DB.data[p].accessRate),
+        backgroundColor: COLORS.accent + "d9",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "%" } },
+      },
+    },
+  });
+}
+
+function renderPatientsChart() {
+  new Chart(document.getElementById("patientsChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [
+        {
+          label: "รายเก่าก่อนปีงบ",
+          data: DB.provinces.map((p) => DB.data[p].old),
+          backgroundColor: COLORS.indigo + "d9",
+          stack: "a",
+          borderRadius: 4,
+        },
+        {
+          label: "รายใหม่ปีงบนี้",
+          data: DB.provinces.map((p) => DB.data[p].new),
+          backgroundColor: COLORS.attempt + "d9",
+          stack: "a",
+          borderRadius: 4,
+        },
+        {
+          label: "ประมาณการในพื้นที่",
+          data: DB.provinces.map((p) => DB.data[p].estimated),
+          type: "line",
+          borderColor: COLORS.death,
+          borderDash: [7, 6],
+          borderWidth: 1.5,
+          pointRadius: 3,
+          pointBackgroundColor: COLORS.death,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, title: { display: true, text: "คน" } },
+      },
+    },
+  });
+}
+
+function renderFollowChart() {
+  new Chart(document.getElementById("followChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [
+        {
+          label: "ติดตาม 1 ครั้ง",
+          data: DB.provinces.map((p) => DB.data[p].follow1),
+          backgroundColor: COLORS.accent + "d9",
+          borderRadius: 4,
+        },
+        {
+          label: "ติดตาม ≥2 ครั้ง",
+          data: DB.provinces.map((p) => DB.data[p].follow2),
+          backgroundColor: COLORS.teal + "d9",
+          borderRadius: 4,
+        },
+        {
+          label: "ติดตาม ≥2 + ไม่ก่อซ้ำ",
+          data: DB.provinces.map((p) => DB.data[p].follow2NoRepeat),
+          backgroundColor: COLORS.good + "d9",
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "คน" } },
+      },
+    },
+  });
+}
+
+function renderRateChart() {
+  new Chart(document.getElementById("rateChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [{
+        label: "ผู้ป่วยต่อแสนประชากร",
+        data: DB.provinces.map((p) => patientRate(p)),
+        backgroundColor: COLORS.indigo + "d9",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "ต่อแสนประชากร" } },
+      },
+    },
+  });
+}
+
+function renderNoRepeatChart() {
+  new Chart(document.getElementById("noRepeatChart"), {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [{
+        label: "ไม่ก่อความรุนแรงซ้ำ",
+        data: DB.provinces.map((p) => DB.data[p].noRepeat),
+        backgroundColor: COLORS.good + "d9",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "คน" } },
+      },
+    },
+  });
+}
+
+/* ---------- table ---------- */
+
+function renderTable() {
+  const target = currentTarget();
+  setText("tableSub",
+    `เกณฑ์ผ่าน = % ดูแลต่อเนื่องและไม่ก่อความรุนแรงซ้ำ ≥ ${target}% (${ROUND_LABELS[DB.meta.currentRound]}) · เลื่อนดูข้อมูลด้านขวาได้`);
+  const tbody = document.querySelector("#smivTable tbody");
+  tbody.textContent = "";
+
+  const makeRow = (name, entry, population, isTotal) => {
+    const rate = entry.total / population * PER_HUNDRED_THOUSAND;
+    const isPass = entry.kpi >= target;
+    const row = document.createElement("tr");
+    if (isTotal) row.className = "row-total";
+    row.innerHTML = `
+      <td>${name}</td>
+      <td>${formatNumber(population)}</td>
+      <td>${formatNumber(entry.old)}</td>
+      <td>${formatNumber(entry.new)}</td>
+      <td>${formatNumber(entry.total)}</td>
+      <td>${formatNumber(rate, 1)}</td>
+      <td>${formatNumber(entry.estimated)}</td>
+      <td>${formatNumber(entry.accessRate, 1)}</td>
+      <td>${formatNumber(entry.follow2NoRepeat)}</td>
+      <td>${formatNumber(entry.kpi, 1)}</td>
+      <td><span class="cell-badge ${isPass ? "pass" : "fail"}">${isPass ? "ผ่าน" : "ไม่ผ่าน"}</span></td>`;
+    return row;
+  };
+
+  for (const province of DB.provinces) {
+    tbody.appendChild(makeRow(province, DB.data[province], DB.population[province], false));
+  }
+  tbody.appendChild(makeRow("รวมเขตสุขภาพที่ 8", DB.data["รวม"], DB.population["รวม"], true));
+}
+
+/* ---------- main ---------- */
+
+async function init() {
+  try {
+    const response = await fetch("smiv-data.json");
+    if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (HTTP ${response.status})`);
+    DB = await response.json();
+  } catch (error) {
+    document.querySelector("main").innerHTML =
+      `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
+        เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
+    return;
+  }
+
+  initChartTheme();
+  setText("periodLabel", DB.meta.asOfLabel);
+  setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
+  renderKpis();
+  renderInsights();
+  renderKpiChart();
+  renderAccessChart();
+  renderPatientsChart();
+  renderFollowChart();
+  renderRateChart();
+  renderNoRepeatChart();
+  renderTable();
+}
+
+init();
