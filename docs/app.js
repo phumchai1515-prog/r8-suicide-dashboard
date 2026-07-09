@@ -886,6 +886,9 @@ function renderTable(summary, months, provinceValue) {
 /* ตารางรายอำเภอ (เมื่อเลือกจังหวัด) — ไม่มีประชากร/HDC รายอำเภอ จึงแสดงจำนวนราย */
 function renderDistrictTable(province, months) {
   setText("tableTitle", `ตารางสรุปรายอำเภอ · จังหวัด${province}`);
+  setText("tableSub",
+    `เกณฑ์ระดับอำเภอใช้การตรวจประเมินจิตเวช (ข้อ 7.2) เทียบเป้า ≥ ${formatNumber(DB.meta.kpi2Target, 0)}% — ` +
+    `KPI อัตราต่อแสนและสูตร HDC ประเมินรายอำเภอไม่ได้ (ไม่มีข้อมูลประชากร/HDC ระดับอำเภอ)`);
   document.querySelector("#provinceTable thead").innerHTML = `
     <tr>
       <th>อำเภอ</th>
@@ -894,6 +897,7 @@ function renderDistrictTable(province, months) {
       <th>รวม</th>
       <th>ตรวจประเมินจิตเวช (7.2)</th>
       <th>% ประเมิน</th>
+      <th>เกณฑ์ 7.2 (≥${formatNumber(DB.meta.kpi2Target, 0)}%)</th>
     </tr>`;
   const tbody = document.querySelector("#provinceTable tbody");
   tbody.textContent = "";
@@ -904,6 +908,11 @@ function renderDistrictTable(province, months) {
 
   const makeRow = (name, counts, isTotal) => {
     const assessed = accessPercent(counts.access, counts.attempt);
+    const hasAttempts = counts.attempt > 0;
+    const isPass = assessed >= DB.meta.kpi2Target;
+    const badge = hasAttempts
+      ? `<span class="cell-badge ${isPass ? "pass" : "fail"}">${isPass ? "ผ่าน" : "ไม่ผ่าน"}</span>`
+      : `<span class="cell-badge">ไม่มีผู้พยายามฯ</span>`;
     const row = document.createElement("tr");
     if (isTotal) row.className = "row-total";
     row.innerHTML = `
@@ -912,7 +921,8 @@ function renderDistrictTable(province, months) {
       <td>${formatNumber(counts.attempt)}</td>
       <td>${formatNumber(counts.die + counts.attempt)}</td>
       <td>${formatNumber(counts.access)}</td>
-      <td>${formatNumber(assessed, 1)}</td>`;
+      <td>${hasAttempts ? formatNumber(assessed, 1) : "–"}</td>
+      <td>${badge}</td>`;
     return row;
   };
 
@@ -929,6 +939,7 @@ function renderDistrictTable(province, months) {
 
 function renderProvinceTable(summary, months) {
   setText("tableTitle", "ตารางสรุปรายจังหวัด");
+  setText("tableSub", "ตามช่วงเวลาที่เลือก · เลื่อนดูข้อมูลด้านขวาได้");
   document.querySelector("#provinceTable thead").innerHTML = `
     <tr>
       <th>จังหวัด</th>
