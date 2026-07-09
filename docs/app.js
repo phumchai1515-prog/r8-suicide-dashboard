@@ -138,8 +138,8 @@ function renderKpis(summary, provinces, months) {
   const days = daysCovered(months);
   const rate = suicideRate(summary.die, population);
   const projected = annualize(rate, days);
-  const hdcAccess = hdcCount(provinces, months);
-  const access = accessPercent(hdcAccess, summary.attempt);
+  const hdcTotal = hdcCount(provinces, months);
+  const access = accessPercent(summary.attempt, hdcTotal);
 
   setText("kpi1Value", formatNumber(rate, 2));
   setText("kpi1Target", formatNumber(DB.meta.kpi1Target, 0));
@@ -151,9 +151,8 @@ function renderKpis(summary, provinces, months) {
   setText("kpi2Value", formatNumber(access, 1));
   setText("kpi2Target", formatNumber(DB.meta.kpi2Target, 0));
   setText("kpi2Detail",
-    `เข้าถึงบริการ (HDC) ${formatNumber(hdcAccess)} ราย ` +
-    `เทียบผู้พยายามฯ จากระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย ` +
-    `(เพดานไม่เกินร้อยละ 100)`);
+    `สูตร: 100 × (506S ÷ HDC) — ผู้พยายามฯ ในระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย ` +
+    `÷ ผู้มารับบริการจาก HDC ${formatNumber(hdcTotal)} ราย`);
   setBadge("kpi2Badge", access >= DB.meta.kpi2Target);
 
   setText("totalDeaths", formatNumber(summary.die));
@@ -241,7 +240,7 @@ function renderProvinceRateChart(summary, months) {
 function renderAccessChart(summary, months) {
   const values = DB.provinces.map((p) => {
     const row = summary.byProvince[p] || { attempt: 0 };
-    return accessPercent(hdcCount([p], months), row.attempt);
+    return accessPercent(row.attempt, hdcCount([p], months));
   });
   drawChart("accessChart", {
     type: "bar",
@@ -249,7 +248,7 @@ function renderAccessChart(summary, months) {
       labels: DB.provinces,
       datasets: [
         {
-          label: "% เข้าถึงบริการ (HDC ÷ 506S)",
+          label: "% เข้าถึงบริการ = 100 × (506S ÷ HDC)",
           data: values,
           backgroundColor: values.map((v) =>
             v >= DB.meta.kpi2Target ? COLORS.green : COLORS.attempt),
@@ -360,10 +359,10 @@ function renderTable(summary, months) {
   const tbody = document.querySelector("#provinceTable tbody");
   tbody.textContent = "";
 
-  const makeRow = (name, counts, population, hdcAccess, isTotal) => {
+  const makeRow = (name, counts, population, hdcTotal, isTotal) => {
     const rate = suicideRate(counts.die, population);
     const projected = annualize(rate, days);
-    const access = accessPercent(hdcAccess, counts.attempt);
+    const access = accessPercent(counts.attempt, hdcTotal);
     const assessed = accessPercent(counts.access, counts.attempt);
     const row = document.createElement("tr");
     if (isTotal) row.className = "row-total";
@@ -374,7 +373,7 @@ function renderTable(summary, months) {
       <td>${formatNumber(rate, 2)}</td>
       <td>${formatNumber(projected, 2)}</td>
       <td>${formatNumber(counts.attempt)}</td>
-      <td>${formatNumber(hdcAccess)}</td>
+      <td>${formatNumber(hdcTotal)}</td>
       <td>${formatNumber(access, 1)}</td>
       <td>${formatNumber(assessed, 1)}</td>
       <td><span class="cell-badge ${projected <= DB.meta.kpi1Target ? "pass" : "fail"}">${projected <= DB.meta.kpi1Target ? "ผ่าน" : "ไม่ผ่าน"}</span></td>
