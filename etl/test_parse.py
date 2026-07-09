@@ -65,6 +65,13 @@ class TestAggregate(unittest.TestCase):
         bucket = parse.aggregate([self.make_record(hanging="มี")])["เลย"]["2568-10"]
         self.assertEqual(bucket["byMethod"].get("แขวนคอ"), 1)
 
+    def test_counts_risk_factor_when_present(self):
+        rec = self.make_record()
+        rec[91] = "มี"  # R1 ป่วยด้วยโรคจิตเวช
+        bucket = parse.aggregate([rec])["เลย"]["2568-10"]
+        self.assertEqual(bucket["byRisk"].get("ป่วยด้วยโรคจิตเวช"), 1)
+        self.assertNotIn("ติดสุรา", bucket["byRisk"])
+
     def test_rejects_unknown_province(self):
         with self.assertRaises(ValueError):
             parse.aggregate([self.make_record(province="เชียงใหม่")])

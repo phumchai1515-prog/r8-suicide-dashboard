@@ -335,6 +335,16 @@ body::before {
 .panel-sub { font-size: 0.78rem; color: var(--faint); margin-top: 2px; margin-bottom: 14px; }
 .chart-box { position: relative; height: 280px; }
 .chart-box.tall { height: 340px; }
+.chart-box.mini { height: 190px; }
+
+/* กราฟย่อยรายจังหวัด (small multiples) */
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+}
+.mini-panel { padding: 16px 18px; }
+.mini-panel .panel-sub { margin-bottom: 8px; }
 
 /* ---------- Table ---------- */
 .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); }

@@ -64,7 +64,7 @@ function daysCovered(months) {
 function summarize(provinces, months) {
   const total = {
     die: 0, attempt: 0, access: 0,
-    bySex: {}, byAge: {}, byMethod: {},
+    bySex: {}, byAge: {}, byMethod: {}, byRisk: {},
     byMonth: {}, byProvince: {},
   };
   for (const month of months) {
@@ -88,6 +88,9 @@ function summarize(provinces, months) {
       mergeCounts(total.byAge, bucket.byAge);
       for (const [method, count] of Object.entries(bucket.byMethod)) {
         total.byMethod[method] = (total.byMethod[method] || 0) + count;
+      }
+      for (const [risk, count] of Object.entries(bucket.byRisk || {})) {
+        total.byRisk[risk] = (total.byRisk[risk] || 0) + count;
       }
     }
     total.byProvince[province] = perProvince;
@@ -570,6 +573,86 @@ function renderMethodChart(summary) {
   });
 }
 
+/* กลุ่มเสี่ยง/ปัจจัยเสี่ยง (Cri. + R1-R10) — ภาพรวมตามตัวกรอง */
+function renderRiskChart(summary) {
+  const entries = Object.entries(summary.byRisk).sort((a, b) => b[1] - a[1]);
+  drawChart("riskChart", {
+    type: "bar",
+    data: {
+      labels: entries.map(([name]) => name),
+      datasets: [{
+        label: "จำนวนราย",
+        data: entries.map(([, n]) => n),
+        backgroundColor: COLORS.accent + "d9",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, title: { display: true, text: "ราย" } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+/* กราฟย่อยรายจังหวัด: ปัจจัยเสี่ยง 5 อันดับแรกของแต่ละจังหวัด */
+const TOP_RISKS_PER_PROVINCE = 5;
+
+function renderProvinceRiskCharts(months) {
+  const container = document.getElementById("provinceRiskGrid");
+  /* ล้างกราฟเก่าก่อนสร้าง canvas ชุดใหม่ */
+  for (const id of Object.keys(charts)) {
+    if (id.startsWith("provRisk-")) {
+      charts[id].destroy();
+      delete charts[id];
+    }
+  }
+  container.textContent = "";
+
+  DB.provinces.forEach((province, index) => {
+    const summary = summarize([province], months);
+    const entries = Object.entries(summary.byRisk)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, TOP_RISKS_PER_PROVINCE);
+    const totalCases = summary.die + summary.attempt;
+
+    const panel = document.createElement("article");
+    panel.className = "panel mini-panel";
+    const canvasId = `provRisk-${index}`;
+    panel.innerHTML = `
+      <p class="panel-title">${province}</p>
+      <p class="panel-sub">${formatNumber(totalCases)} เคสในช่วงที่เลือก · ปัจจัยเสี่ยง ${TOP_RISKS_PER_PROVINCE} อันดับแรก</p>
+      <div class="chart-box mini"><canvas id="${canvasId}"></canvas></div>`;
+    container.appendChild(panel);
+
+    drawChart(canvasId, {
+      type: "bar",
+      data: {
+        labels: entries.map(([name]) => name),
+        datasets: [{
+          label: "ราย",
+          data: entries.map(([, n]) => n),
+          backgroundColor: COLORS.teal + "d9",
+          borderRadius: 5,
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 } },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        },
+      },
+    });
+  });
+}
+
 /* ---------- table ---------- */
 
 function renderTable(summary, months) {
@@ -636,6 +719,8 @@ function render() {
   renderSexChart(summary);
   renderAgeChart(summary);
   renderMethodChart(summary);
+  renderRiskChart(summary);
+  renderProvinceRiskCharts(months);
   renderTable(allProvinceSummary, months);
 }
 

@@ -171,13 +171,30 @@
     </article>
   </section>
 
-  <section class="grid">
+  <section class="grid grid-2">
     <article class="panel">
       <p class="panel-title">วิธีที่ใช้ทำร้ายตนเอง</p>
       <p class="panel-sub">จำนวนครั้งที่พบ (หนึ่งเคสอาจใช้มากกว่าหนึ่งวิธี)</p>
       <div class="chart-box"><canvas id="methodChart"></canvas></div>
     </article>
 
+    <article class="panel">
+      <p class="panel-title">กลุ่มเสี่ยง / ปัจจัยเสี่ยง</p>
+      <p class="panel-sub">จำนวนรายที่พบปัจจัย (หนึ่งเคสอาจมีหลายปัจจัย · จากแบบ 506S)</p>
+      <div class="chart-box"><canvas id="riskChart"></canvas></div>
+    </article>
+  </section>
+
+  <section class="insights" aria-label="ปัจจัยเสี่ยงรายจังหวัด">
+    <div class="section-head">
+      <span class="bar"></span>
+      <h3>ปัจจัยเสี่ยงรายจังหวัด</h3>
+      <span class="hint">5 อันดับแรกของแต่ละจังหวัด ตามช่วงเวลาที่เลือก</span>
+    </div>
+    <div class="mini-grid" id="provinceRiskGrid"></div>
+  </section>
+
+  <section class="grid">
     <article class="panel">
       <p class="panel-title">ตารางสรุปรายจังหวัด</p>
       <p class="panel-sub">ตามช่วงเวลาที่เลือก · เลื่อนดูข้อมูลด้านขวาได้</p>

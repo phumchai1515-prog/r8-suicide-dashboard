@@ -53,6 +53,21 @@ METHOD_COLUMNS = {
     39: "อื่นๆ",
 }
 
+# กลุ่มเสี่ยง: ปัจจัยกระตุ้น (Cri.) และปัจจัยเสี่ยง R1-R10 ของแบบ 506S
+RISK_COLUMNS = {
+    45: "ประสบปัญหาชีวิต",
+    91: "ป่วยด้วยโรคจิตเวช",
+    105: "ติดสุรา",
+    107: "ติดสารเสพติด",
+    109: "โรคทางกายเรื้อรัง",
+    131: "บุคลิกภาพเสี่ยง",
+    136: "เคยทำร้ายตนเองมาก่อน",
+    138: "ครอบครัวเคยฆ่าตัวตาย",
+    140: "ประสบการณ์เลวร้ายวัยเด็ก",
+    142: "ค่านิยม/ความเชื่อส่วนบุคคล",
+    144: "ปัจจัยเสี่ยงอื่นๆ",
+}
+
 OUTCOME_DEATH = "ตาย"
 OUTCOME_ATTEMPTS = ("บาดเจ็บ", "ไม่บาดเจ็บ")
 
@@ -160,6 +175,7 @@ def empty_bucket() -> dict:
         "bySex": {},
         "byAge": {},
         "byMethod": {},
+        "byRisk": {},
     }
 
 
@@ -197,6 +213,11 @@ def aggregate(records: list[list[str]]) -> dict:
             if rec[col].strip() == "มี":
                 bucket["byMethod"][method_name] = (
                     bucket["byMethod"].get(method_name, 0) + 1
+                )
+        for col, risk_name in RISK_COLUMNS.items():
+            if rec[col].strip() == "มี":
+                bucket["byRisk"][risk_name] = (
+                    bucket["byRisk"].get(risk_name, 0) + 1
                 )
     return result
 
