@@ -381,7 +381,7 @@ function renderProvinceRateChart(summary, months, provinceValue) {
     const byDistrict = summarizeDistricts(provinceValue, months);
     const order = Object.keys(byDistrict)
       .sort((a, b) => byDistrict[b].die - byDistrict[a].die);
-    box.style.height = `${Math.max(340, order.length * DISTRICT_ROW_PX + 80)}px`;
+    box.style.height = "340px";
     drawChart("provinceRateChart", {
       type: "bar",
       data: {
@@ -395,11 +395,10 @@ function renderProvinceRateChart(summary, months, provinceValue) {
       },
       options: {
         maintainAspectRatio: false,
-        indexAxis: "y",
         plugins: { legend: { display: false } },
         scales: {
-          x: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "ราย" } },
-          y: { grid: { display: false } },
+          x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45 } },
+          y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "ราย" } },
         },
       },
     });
