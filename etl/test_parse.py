@@ -110,6 +110,30 @@ class TestRealData(unittest.TestCase):
         self.assertEqual(population["รวม"], 5_435_662)
         self.assertEqual(len([p for p in parse.PROVINCES if p in population]), 7)
 
+    def test_hdc_yearly_totals_match_source(self):
+        path = parse.RAW_DIR / parse.HDC_FILE
+        if not path.exists():
+            self.skipTest("ไม่มีไฟล์ HDC")
+        hdc = parse.parse_hdc(path)
+        self.assertEqual(hdc["yearly"]["รวม"], 1_706)
+        self.assertEqual(hdc["yearly"]["สกลนคร"], 457)
+        self.assertEqual(hdc["yearly"]["หนองคาย"], 106)
+
+    def test_hdc_monthly_counts_are_complete(self):
+        path = parse.RAW_DIR / parse.HDC_FILE
+        if not path.exists():
+            self.skipTest("ไม่มีไฟล์ HDC")
+        hdc = parse.parse_hdc(path)
+        october_total = sum(
+            hdc["byProvMonth"][p]["2568-10"] for p in parse.PROVINCES)
+        self.assertEqual(october_total, 249)
+        for province in parse.PROVINCES:
+            self.assertEqual(
+                sorted(hdc["byProvMonth"][province].keys()),
+                sorted(parse.FISCAL_MONTHS),
+                province,
+            )
+
     def test_aggregate_totals_match_source(self):
         records = []
         for filename in parse.CASE_FILES:

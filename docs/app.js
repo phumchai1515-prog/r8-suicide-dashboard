@@ -110,6 +110,22 @@ function accessPercent(access, attempts) {
   return attempts > 0 ? (access / attempts) * 100 : 0;
 }
 
+/* จำนวนผู้เข้าถึงบริการจาก HDC — ทั้งปีใช้ยอดคนไม่ซ้ำทั้งปี,
+   บางช่วงเดือนใช้ผลรวมยอดคนรายเดือน (นับไม่ซ้ำภายในเดือน) */
+function hdcCount(provinces, months) {
+  const isFullPeriod = months.length === DB.months.length;
+  let total = 0;
+  for (const province of provinces) {
+    if (isFullPeriod) {
+      total += DB.hdc.yearly[province] || 0;
+    } else {
+      const monthly = DB.hdc.byProvMonth[province] || {};
+      total += months.reduce((sum, m) => sum + (monthly[m] || 0), 0);
+    }
+  }
+  return total;
+}
+
 /* ---------- KPI cards ---------- */
 
 function renderKpis(summary, provinces, months) {
@@ -120,7 +136,8 @@ function renderKpis(summary, provinces, months) {
   const days = daysCovered(months);
   const rate = suicideRate(summary.die, population);
   const projected = annualize(rate, days);
-  const access = accessPercent(summary.access, summary.attempt);
+  const hdcAccess = hdcCount(provinces, months);
+  const access = accessPercent(hdcAccess, summary.attempt);
 
   setText("kpi1Value", formatNumber(rate, 2));
   setText("kpi1Target", formatNumber(DB.meta.kpi1Target, 0));
@@ -132,8 +149,9 @@ function renderKpis(summary, provinces, months) {
   setText("kpi2Value", formatNumber(access, 1));
   setText("kpi2Target", formatNumber(DB.meta.kpi2Target, 0));
   setText("kpi2Detail",
-    `ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2) ${formatNumber(summary.access)} ราย ` +
-    `จากผู้พยายามฯ ${formatNumber(summary.attempt)} ราย`);
+    `เข้าถึงบริการ (HDC) ${formatNumber(hdcAccess)} ราย ` +
+    `เทียบผู้พยายามฯ จากระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย` +
+    (access > 100 ? " · เกิน 100% ได้ เนื่องจาก HDC ครอบคลุมมากกว่ารายงาน 506S" : ""));
   setBadge("kpi2Badge", access >= DB.meta.kpi2Target);
 
   setText("totalDeaths", formatNumber(summary.die));
@@ -218,10 +236,10 @@ function renderProvinceRateChart(summary, months) {
   });
 }
 
-function renderAccessChart(summary) {
+function renderAccessChart(summary, months) {
   const values = DB.provinces.map((p) => {
-    const row = summary.byProvince[p] || { access: 0, attempt: 0 };
-    return accessPercent(row.access, row.attempt);
+    const row = summary.byProvince[p] || { attempt: 0 };
+    return accessPercent(hdcCount([p], months), row.attempt);
   });
   drawChart("accessChart", {
     type: "bar",
@@ -229,7 +247,7 @@ function renderAccessChart(summary) {
       labels: DB.provinces,
       datasets: [
         {
-          label: "% เข้าถึงบริการ",
+          label: "% เข้าถึงบริการ (HDC ÷ 506S)",
           data: values,
           backgroundColor: values.map((v) =>
             v >= DB.meta.kpi2Target ? COLORS.green : COLORS.attempt),
@@ -247,6 +265,31 @@ function renderAccessChart(summary) {
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
+      scales: { x: { beginAtZero: true, title: { display: true, text: "%" } } },
+    },
+  });
+}
+
+/* ตัวชี้วัดรอง: % ผู้พยายามฯ ที่ได้รับการตรวจประเมินจิตเวช (ข้อ 7.2 จาก 506S) */
+function renderAssessmentChart(summary) {
+  const values = DB.provinces.map((p) => {
+    const row = summary.byProvince[p] || { access: 0, attempt: 0 };
+    return accessPercent(row.access, row.attempt);
+  });
+  drawChart("assessmentChart", {
+    type: "bar",
+    data: {
+      labels: DB.provinces,
+      datasets: [{
+        label: "% ตรวจประเมินจิตเวช (ข้อ 7.2)",
+        data: values,
+        backgroundColor: COLORS.navy,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
       scales: { x: { beginAtZero: true, max: 100, title: { display: true, text: "%" } } },
     },
   });
@@ -315,10 +358,11 @@ function renderTable(summary, months) {
   const tbody = document.querySelector("#provinceTable tbody");
   tbody.textContent = "";
 
-  const makeRow = (name, counts, population, isTotal) => {
+  const makeRow = (name, counts, population, hdcAccess, isTotal) => {
     const rate = suicideRate(counts.die, population);
     const projected = annualize(rate, days);
-    const access = accessPercent(counts.access, counts.attempt);
+    const access = accessPercent(hdcAccess, counts.attempt);
+    const assessed = accessPercent(counts.access, counts.attempt);
     const row = document.createElement("tr");
     if (isTotal) row.className = "row-total";
     row.innerHTML = `
@@ -328,8 +372,9 @@ function renderTable(summary, months) {
       <td>${formatNumber(rate, 2)}</td>
       <td>${formatNumber(projected, 2)}</td>
       <td>${formatNumber(counts.attempt)}</td>
-      <td>${formatNumber(counts.access)}</td>
+      <td>${formatNumber(hdcAccess)}</td>
       <td>${formatNumber(access, 1)}</td>
+      <td>${formatNumber(assessed, 1)}</td>
       <td><span class="cell-badge ${projected <= DB.meta.kpi1Target ? "pass" : "fail"}">${projected <= DB.meta.kpi1Target ? "ผ่าน" : "ไม่ผ่าน"}</span></td>
       <td><span class="cell-badge ${access >= DB.meta.kpi2Target ? "pass" : "fail"}">${access >= DB.meta.kpi2Target ? "ผ่าน" : "ไม่ผ่าน"}</span></td>`;
     return row;
@@ -337,12 +382,14 @@ function renderTable(summary, months) {
 
   for (const province of DB.provinces) {
     const counts = summary.byProvince[province] || { die: 0, attempt: 0, access: 0 };
-    tbody.appendChild(makeRow(province, counts, DB.population[province], false));
+    tbody.appendChild(makeRow(
+      province, counts, DB.population[province], hdcCount([province], months), false));
   }
   tbody.appendChild(makeRow(
     "รวมเขตสุขภาพที่ 8",
     { die: summary.die, attempt: summary.attempt, access: summary.access },
     DB.population["รวม"],
+    hdcCount(DB.provinces, months),
     true,
   ));
 }
@@ -364,7 +411,8 @@ function render() {
   renderKpis(summary, provinces, months);
   renderTrendChart(summary, months);
   renderProvinceRateChart(allProvinceSummary, months);
-  renderAccessChart(allProvinceSummary);
+  renderAccessChart(allProvinceSummary, months);
+  renderAssessmentChart(allProvinceSummary);
   renderSexChart(summary);
   renderAgeChart(summary);
   renderMethodChart(summary);

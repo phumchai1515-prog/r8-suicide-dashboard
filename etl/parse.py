@@ -26,6 +26,8 @@ CASE_FILES = [
 ]
 POPULATION_FILE = "ข้อมูลประชากรกลางปี-2568.xlsx"
 POPULATION_SHEET = "เขต8"
+HDC_FILE = "export_data_20260709_1783566659_WLG3GIXS58.xlsx"
+HDC_SHEET = "Sheet1"
 
 # ตำแหน่งคอลัมน์ในรายงาน 506S (202 คอลัมน์)
 COL_PROVINCE = 2
@@ -69,6 +71,21 @@ PERIOD_END = date(2026, 7, 9)
 
 KPI1_TARGET = 10.0  # อัตราฆ่าตัวตายสำเร็จ ไม่เกิน 10 ต่อแสนประชากร
 KPI2_TARGET = 70.0  # ร้อยละการเข้าถึงบริการของผู้พยายามฆ่าตัวตาย
+
+# โครงสร้างไฟล์ HDC: แถวข้อมูลจังหวัดเริ่มแถว 4, เดือน m เริ่มคอลัมน์ 5 + m*12
+# แต่ละเดือนมี 6 กลุ่มอายุ x (คน, ครั้ง) — นับเฉพาะคอลัมน์ "คน"
+HDC_DATA_START_ROW = 4
+HDC_MONTH_START_COL = 5
+HDC_COLS_PER_MONTH = 12
+HDC_AGE_BUCKETS = 6
+HDC_MONTH_KEYS = [
+    "2568-10", "2568-11", "2568-12",
+    "2569-01", "2569-02", "2569-03",
+    "2569-04", "2569-05", "2569-06", "2569-07",
+    None, None,  # ส.ค. / ก.ย. อยู่นอกช่วงข้อมูล (ค่าเป็นศูนย์)
+]
+HDC_COL_MALE_YEAR = 1
+HDC_COL_FEMALE_YEAR = 2
 
 # จำนวนวันของแต่ละเดือนในช่วงข้อมูล (ก.ค. 2569 มีถึงวันที่ 9)
 MONTH_DAYS = {
@@ -222,6 +239,43 @@ def parse_population(path: Path) -> dict[str, int]:
     return population
 
 
+def parse_hdc(path: Path) -> dict:
+    """อ่านจำนวนผู้พยายามฆ่าตัวตายที่เข้าถึงบริการจาก HDC (คน รายจังหวัด x เดือน)
+
+    หมายเหตุ: ยอด "yearly" คือจำนวนคนไม่ซ้ำทั้งปี ส่วนยอดรายเดือนนับคนไม่ซ้ำ
+    ภายในเดือนนั้น (ผลรวมรายเดือนจึงอาจมากกว่ายอดทั้งปี)
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"ไม่พบไฟล์ HDC: {path}")
+    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    if HDC_SHEET not in workbook.sheetnames:
+        raise ValueError(f"ไม่พบ sheet '{HDC_SHEET}' ในไฟล์ HDC")
+    rows = list(workbook[HDC_SHEET].iter_rows(values_only=True))
+
+    by_prov_month: dict[str, dict[str, int]] = {}
+    yearly: dict[str, int] = {}
+    for row in rows[HDC_DATA_START_ROW:]:
+        province = str(row[0]).strip() if row[0] else ""
+        if province not in PROVINCES:
+            continue  # ข้ามแถวรวมท้ายตารางและแถวว่าง
+        yearly[province] = int(row[HDC_COL_MALE_YEAR] or 0) + int(row[HDC_COL_FEMALE_YEAR] or 0)
+        monthly: dict[str, int] = {}
+        for m, month_key in enumerate(HDC_MONTH_KEYS):
+            if month_key is None:
+                continue
+            start = HDC_MONTH_START_COL + m * HDC_COLS_PER_MONTH
+            monthly[month_key] = sum(
+                int(row[start + i * 2] or 0) for i in range(HDC_AGE_BUCKETS)
+            )
+        by_prov_month[province] = monthly
+
+    missing = [p for p in PROVINCES if p not in yearly]
+    if missing:
+        raise ValueError(f"ข้อมูล HDC ไม่ครบทุกจังหวัด ขาด: {missing}")
+    yearly["รวม"] = sum(yearly[p] for p in PROVINCES)
+    return {"byProvMonth": by_prov_month, "yearly": yearly}
+
+
 def validate(data: dict, expected_total: int) -> None:
     """ตรวจสอบยอดรวมหลัง aggregate ต้องเท่ากับจำนวนเคสต้นฉบับ"""
     total = sum(
@@ -233,7 +287,7 @@ def validate(data: dict, expected_total: int) -> None:
         raise ValueError(f"ยอดรวมไม่ตรง: aggregate ได้ {total} ต้นฉบับ {expected_total}")
 
 
-def build_output(data: dict, population: dict[str, int]) -> dict:
+def build_output(data: dict, population: dict[str, int], hdc: dict) -> dict:
     days_covered = (PERIOD_END - PERIOD_START).days + 1
     return {
         "meta": {
@@ -244,13 +298,14 @@ def build_output(data: dict, population: dict[str, int]) -> dict:
             "kpi1Target": KPI1_TARGET,
             "kpi2Target": KPI2_TARGET,
             "populationYear": 2568,
-            "source": "รายงานเฝ้าระวังการทำร้ายตนเอง (รง.506S) และประชากรกลางปี 2568 กองยุทธศาสตร์และแผนงาน",
+            "source": "รายงานเฝ้าระวังการทำร้ายตนเอง (รง.506S), ข้อมูลการเข้าถึงบริการจาก HDC และประชากรกลางปี 2568 กองยุทธศาสตร์และแผนงาน",
         },
         "months": FISCAL_MONTHS,
         "monthDays": MONTH_DAYS,
         "provinces": PROVINCES,
         "ageGroups": AGE_GROUPS,
         "population": population,
+        "hdc": hdc,
         "data": data,
     }
 
@@ -265,8 +320,9 @@ def main() -> int:
     data = aggregate(all_records)
     validate(data, len(all_records))
     population = parse_population(RAW_DIR / POPULATION_FILE)
+    hdc = parse_hdc(RAW_DIR / HDC_FILE)
 
-    output = build_output(data, population)
+    output = build_output(data, population, hdc)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(
         json.dumps(output, ensure_ascii=False, indent=1), encoding="utf-8"
@@ -274,11 +330,13 @@ def main() -> int:
 
     deaths = sum(b["die"] for m in data.values() for b in m.values())
     attempts = sum(b["attempt"] for m in data.values() for b in m.values())
-    access = sum(b["access"] for m in data.values() for b in m.values())
+    assessed = sum(b["access"] for m in data.values() for b in m.values())
+    hdc_total = hdc["yearly"]["รวม"]
     rate = deaths / population["รวม"] * 100_000
     print(f"\nรวม {len(all_records)} เคส | เสียชีวิต {deaths} | พยายาม {attempts}")
     print(f"KPI1 อัตราฆ่าตัวตายสำเร็จสะสม: {rate:.2f} ต่อแสน (เป้า ≤ {KPI1_TARGET})")
-    print(f"KPI2 เข้าถึงบริการ: {access}/{attempts} = {access / attempts * 100:.1f}% (เป้า ≥ {KPI2_TARGET}%)")
+    print(f"KPI2 เข้าถึงบริการ (HDC/506S): {hdc_total}/{attempts} = {hdc_total / attempts * 100:.1f}% (เป้า ≥ {KPI2_TARGET}%)")
+    print(f"ตัวชี้วัดรอง ตรวจประเมินจิตเวช (ข้อ 7.2): {assessed}/{attempts} = {assessed / attempts * 100:.1f}%")
     print(f"\nเขียนผลลัพธ์: {OUTPUT_PATH}")
     return 0
 
