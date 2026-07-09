@@ -1,4 +1,5 @@
-/* Dashboard ตัวชี้วัดการฆ่าตัวตาย เขตสุขภาพที่ 8 — อ่าน data.json (ข้อมูลสรุปรวม) แล้ว render */
+/* Dashboard ตัวชี้วัดการฆ่าตัวตาย เขตสุขภาพที่ 8 — อ่าน data.json (ข้อมูลสรุปรวม) แล้ว render
+   ธีม Clinical Command Center (มืด) — ตรรกะการคำนวณตัวชี้วัดคงเดิมทุกสูตร */
 
 "use strict";
 
@@ -15,17 +16,20 @@ const QUARTER_MONTHS = {
 };
 
 const COLORS = {
-  death: "#c0392b",
-  attempt: "#e67e22",
-  navy: "#1e3a5f",
-  teal: "#0e7c7b",
-  green: "#1e8e5a",
-  grayLine: "#8896a5",
+  death: "#f87171",
+  attempt: "#fbbf24",
+  good: "#34d399",
+  accent: "#38bdf8",
+  teal: "#2dd4bf",
+  indigo: "#818cf8",
+  muted: "#93a1b5",
+  grid: "rgba(148, 163, 184, 0.1)",
 };
 
 const DAYS_PER_YEAR = 365;
 const PER_HUNDRED_THOUSAND = 100000;
 const MAX_PERCENT = 100; // เพดานร้อยละการเข้าถึงบริการ ไม่ให้เกิน 100
+const COUNT_UP_MS = 750;
 
 const charts = {};
 let DB = null;
@@ -128,7 +132,52 @@ function hdcCount(provinces, months) {
   return total;
 }
 
-/* ---------- KPI cards ---------- */
+/* ---------- DOM helpers ---------- */
+
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+/* ตัวเลขนับขึ้น (count-up) — เคารพ prefers-reduced-motion */
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function countUp(id, target, digits = 0) {
+  const el = document.getElementById(id);
+  if (REDUCED_MOTION) {
+    el.textContent = formatNumber(target, digits);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min(1, (now - start) / COUNT_UP_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = formatNumber(target * eased, digits);
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function setBadge(id, isPass) {
+  const badge = document.getElementById(id);
+  badge.textContent = isPass ? "ผ่านเป้าหมาย" : "ไม่ผ่านเป้าหมาย";
+  badge.className = `kpi-badge ${isPass ? "pass" : "fail"}`;
+}
+
+function setCardStatus(id, isPass) {
+  document.getElementById(id).className = `kpi-card reveal ${isPass ? "pass" : "fail"}`;
+}
+
+function setRing(ringId, numId, percent, displayText, isPass) {
+  const ring = document.getElementById(ringId);
+  const color = isPass ? "var(--good)" : "var(--bad)";
+  const pct = Math.max(0, Math.min(100, percent));
+  ring.style.background =
+    `radial-gradient(closest-side, #0d1526 82%, transparent 83% 100%), ` +
+    `conic-gradient(${color} ${pct}%, rgba(148,163,184,.14) 0)`;
+  setText(numId, displayText);
+}
+
+/* ---------- KPI hero ---------- */
 
 function renderKpis(summary, provinces, months) {
   const population = provinces.length === DB.provinces.length
@@ -141,41 +190,139 @@ function renderKpis(summary, provinces, months) {
   const hdcTotal = hdcCount(provinces, months);
   const access = accessPercent(summary.attempt, hdcTotal);
 
-  setText("kpi1Value", formatNumber(rate, 2));
+  const kpi1Pass = projected <= DB.meta.kpi1Target;
+  const kpi2Pass = access >= DB.meta.kpi2Target;
+
+  countUp("kpi1Value", rate, 2);
   setText("kpi1Target", formatNumber(DB.meta.kpi1Target, 0));
   setText("kpi1Annualized",
     `คาดการณ์ทั้งปี (annualized): ${formatNumber(projected, 2)} ต่อแสนประชากร ` +
     `(จากข้อมูล ${formatNumber(days)} วัน) · เสียชีวิต ${formatNumber(summary.die)} ราย`);
-  setBadge("kpi1Badge", projected <= DB.meta.kpi1Target);
+  setBadge("kpi1Badge", kpi1Pass);
+  setCardStatus("kpi1Card", kpi1Pass);
+  /* วงแหวน KPI1: สัดส่วนคาดการณ์เทียบเพดานเป้าหมาย (เต็มวง = ถึงเป้า 10) */
+  setRing("kpi1Ring", "kpi1RingNum",
+    (projected / DB.meta.kpi1Target) * 100, formatNumber(projected, 2), kpi1Pass);
 
-  setText("kpi2Value", formatNumber(access, 1));
+  countUp("kpi2Value", access, 1);
   setText("kpi2Target", formatNumber(DB.meta.kpi2Target, 0));
   setText("kpi2Detail",
     `สูตร: 100 × (506S ÷ HDC) — ผู้พยายามฯ ในระบบเฝ้าระวัง 506S ${formatNumber(summary.attempt)} ราย ` +
     `÷ ผู้มารับบริการจาก HDC ${formatNumber(hdcTotal)} ราย`);
-  setBadge("kpi2Badge", access >= DB.meta.kpi2Target);
+  setBadge("kpi2Badge", kpi2Pass);
+  setCardStatus("kpi2Card", kpi2Pass);
+  setRing("kpi2Ring", "kpi2RingNum", access, `${formatNumber(access, 1)}%`, kpi2Pass);
 
-  setText("totalDeaths", formatNumber(summary.die));
-  setText("totalAttempts", formatNumber(summary.attempt));
-  setText("totalCases", formatNumber(summary.die + summary.attempt));
-  setText("populationShown", formatNumber(population));
+  countUp("totalDeaths", summary.die);
+  countUp("totalAttempts", summary.attempt);
+  countUp("totalCases", summary.die + summary.attempt);
+  countUp("populationShown", population);
 }
 
-function setText(id, text) {
-  document.getElementById(id).textContent = text;
-}
+/* ---------- ข้อค้นพบสำคัญ (สร้างอัตโนมัติ) ---------- */
 
-function setBadge(id, isPass) {
-  const badge = document.getElementById(id);
-  badge.textContent = isPass ? "ผ่านเป้าหมาย" : "ไม่ผ่านเป้าหมาย";
-  badge.className = `kpi-badge ${isPass ? "pass" : "fail"}`;
+function renderInsights(allSummary, months) {
+  const days = daysCovered(months);
+  const items = [];
+
+  /* KPI1: จังหวัดที่คาดการณ์เกินเป้า */
+  const overTarget = DB.provinces
+    .map((p) => ({
+      name: p,
+      projected: annualize(
+        suicideRate((allSummary.byProvince[p] || { die: 0 }).die, DB.population[p]), days),
+    }))
+    .filter((p) => p.projected > DB.meta.kpi1Target)
+    .sort((a, b) => b.projected - a.projected);
+  if (overTarget.length > 0) {
+    const names = overTarget
+      .map((p) => `<strong>${p.name}</strong> (${formatNumber(p.projected, 2)})`)
+      .join(" · ");
+    items.push({ tone: "bad",
+      text: `จังหวัดที่คาดการณ์อัตราฆ่าตัวตายทั้งปีเกินเป้า ≤ ${DB.meta.kpi1Target} ต่อแสน: ${names}` });
+  } else {
+    items.push({ tone: "good",
+      text: `อัตราการฆ่าตัวตายสำเร็จ<strong>อยู่ในเป้าหมายทุกจังหวัด</strong> ในช่วงเวลาที่เลือก` });
+  }
+
+  /* KPI2: จังหวัดที่เข้าถึงบริการต่ำกว่าเป้า */
+  const lowAccess = DB.provinces
+    .map((p) => ({
+      name: p,
+      access: accessPercent(
+        (allSummary.byProvince[p] || { attempt: 0 }).attempt, hdcCount([p], months)),
+    }))
+    .filter((p) => p.access < DB.meta.kpi2Target)
+    .sort((a, b) => a.access - b.access);
+  if (lowAccess.length > 0) {
+    const names = lowAccess
+      .map((p) => `<strong>${p.name}</strong> (${formatNumber(p.access, 1)}%)`)
+      .join(" · ");
+    items.push({ tone: "warn",
+      text: `จังหวัดที่การเข้าถึงบริการต่ำกว่าเป้า ${DB.meta.kpi2Target}%: ${names}` });
+  } else {
+    items.push({ tone: "good",
+      text: `การเข้าถึงบริการ<strong>ผ่านเป้าหมายทุกจังหวัด</strong> ในช่วงเวลาที่เลือก` });
+  }
+
+  /* เดือนที่เสียชีวิตสูงสุด */
+  const peak = months.reduce((best, m) =>
+    (allSummary.byMonth[m].die > (best ? allSummary.byMonth[best].die : -1) ? m : best), null);
+  if (peak && allSummary.byMonth[peak].die > 0) {
+    items.push({ tone: "accent",
+      text: `เดือนที่มีผู้เสียชีวิตสูงสุด: <strong>${monthLabel(peak)}</strong> ` +
+        `จำนวน ${formatNumber(allSummary.byMonth[peak].die)} ราย` });
+  }
+
+  /* กลุ่มอายุที่พบมากที่สุด */
+  const topAge = Object.entries(allSummary.byAge)
+    .filter(([g]) => g !== "ไม่ระบุ")
+    .sort((a, b) => (b[1].die + b[1].attempt) - (a[1].die + a[1].attempt))[0];
+  if (topAge) {
+    items.push({ tone: "accent",
+      text: `กลุ่มอายุที่พบมากที่สุด: <strong>${topAge[0]} ปี</strong> ` +
+        `รวม ${formatNumber(topAge[1].die + topAge[1].attempt)} ราย` });
+  }
+
+  const grid = document.getElementById("insightGrid");
+  grid.textContent = "";
+  for (const item of items) {
+    const div = document.createElement("div");
+    div.className = `insight ${item.tone === "accent" ? "" : item.tone}`;
+    div.innerHTML = item.text; // เนื้อหาสร้างจาก whitelist จังหวัด/เดือน/ตัวเลขเท่านั้น
+    grid.appendChild(div);
+  }
 }
 
 /* ---------- charts ---------- */
 
+function initChartTheme() {
+  Chart.defaults.font.family = '"IBM Plex Sans Thai", "Sarabun", sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = COLORS.muted;
+  Chart.defaults.borderColor = COLORS.grid;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true;
+  Chart.defaults.plugins.legend.labels.pointStyle = "rectRounded";
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+  Chart.defaults.plugins.tooltip.backgroundColor = "rgba(13, 21, 38, 0.95)";
+  Chart.defaults.plugins.tooltip.borderColor = "rgba(148, 163, 184, 0.25)";
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.padding = 10;
+  Chart.defaults.plugins.tooltip.cornerRadius = 8;
+}
+
 function drawChart(id, config) {
   if (charts[id]) charts[id].destroy();
   charts[id] = new Chart(document.getElementById(id), config);
+}
+
+function areaGradient(canvasId, hex) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.parentElement.clientHeight);
+  gradient.addColorStop(0, hex + "3d");
+  gradient.addColorStop(1, hex + "02");
+  return gradient;
 }
 
 function renderTrendChart(summary, months) {
@@ -188,21 +335,33 @@ function renderTrendChart(summary, months) {
           label: "ฆ่าตัวตายสำเร็จ",
           data: months.map((m) => summary.byMonth[m].die),
           borderColor: COLORS.death,
-          backgroundColor: COLORS.death,
-          tension: 0.3,
+          backgroundColor: areaGradient("trendChart", COLORS.death),
+          pointBackgroundColor: COLORS.death,
+          fill: true,
+          tension: 0.35,
+          borderWidth: 2.5,
+          pointRadius: 3.5,
         },
         {
           label: "พยายามฆ่าตัวตาย",
           data: months.map((m) => summary.byMonth[m].attempt),
           borderColor: COLORS.attempt,
-          backgroundColor: COLORS.attempt,
-          tension: 0.3,
+          backgroundColor: areaGradient("trendChart", COLORS.attempt),
+          pointBackgroundColor: COLORS.attempt,
+          fill: true,
+          tension: 0.35,
+          borderWidth: 2.5,
+          pointRadius: 3.5,
         },
       ],
     },
     options: {
       maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, title: { display: true, text: "ราย" } } },
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "ราย" } },
+      },
     },
   });
 }
@@ -218,21 +377,36 @@ function renderProvinceRateChart(summary, months) {
     data: {
       labels: DB.provinces,
       datasets: [
-        { label: "อัตราสะสม (ช่วงที่เลือก)", data: rates, backgroundColor: COLORS.navy },
-        { label: "คาดการณ์ทั้งปี", data: projected, backgroundColor: "#7fa3c8" },
+        {
+          label: "อัตราสะสม (ช่วงที่เลือก)",
+          data: rates,
+          backgroundColor: COLORS.accent + "e6",
+          borderRadius: 6,
+        },
+        {
+          label: "คาดการณ์ทั้งปี",
+          data: projected,
+          backgroundColor: projected.map((v) =>
+            v > DB.meta.kpi1Target ? COLORS.death + "cc" : COLORS.indigo + "99"),
+          borderRadius: 6,
+        },
         {
           label: `เป้าหมาย ≤ ${DB.meta.kpi1Target}`,
           data: DB.provinces.map(() => DB.meta.kpi1Target),
           type: "line",
           borderColor: COLORS.death,
-          borderDash: [6, 6],
+          borderDash: [7, 6],
+          borderWidth: 1.5,
           pointRadius: 0,
         },
       ],
     },
     options: {
       maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, title: { display: true, text: "ต่อแสนประชากร" } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "ต่อแสนประชากร" } },
+      },
     },
   });
 }
@@ -251,14 +425,16 @@ function renderAccessChart(summary, months) {
           label: "% เข้าถึงบริการ = 100 × (506S ÷ HDC)",
           data: values,
           backgroundColor: values.map((v) =>
-            v >= DB.meta.kpi2Target ? COLORS.green : COLORS.attempt),
+            v >= DB.meta.kpi2Target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+          borderRadius: 6,
         },
         {
           label: `เป้าหมาย ≥ ${DB.meta.kpi2Target}%`,
           data: DB.provinces.map(() => DB.meta.kpi2Target),
           type: "line",
           borderColor: COLORS.death,
-          borderDash: [6, 6],
+          borderDash: [7, 6],
+          borderWidth: 1.5,
           pointRadius: 0,
         },
       ],
@@ -266,7 +442,10 @@ function renderAccessChart(summary, months) {
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
-      scales: { x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } } },
+      scales: {
+        x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } },
+        y: { grid: { display: false } },
+      },
     },
   });
 }
@@ -284,14 +463,18 @@ function renderAssessmentChart(summary) {
       datasets: [{
         label: "% ตรวจประเมินจิตเวช (ข้อ 7.2)",
         data: values,
-        backgroundColor: COLORS.navy,
+        backgroundColor: COLORS.indigo + "d9",
+        borderRadius: 6,
       }],
     },
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
       plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, max: 100, title: { display: true, text: "%" } } },
+      scales: {
+        x: { beginAtZero: true, max: MAX_PERCENT, title: { display: true, text: "%" } },
+        y: { grid: { display: false } },
+      },
     },
   });
 }
@@ -303,13 +486,26 @@ function renderSexChart(summary) {
     data: {
       labels,
       datasets: [
-        { label: "ฆ่าตัวตายสำเร็จ", data: labels.map((s) => summary.bySex[s].die), backgroundColor: COLORS.death },
-        { label: "พยายามฯ", data: labels.map((s) => summary.bySex[s].attempt), backgroundColor: COLORS.attempt },
+        {
+          label: "ฆ่าตัวตายสำเร็จ",
+          data: labels.map((s) => summary.bySex[s].die),
+          backgroundColor: COLORS.death + "d9",
+          borderRadius: 6,
+        },
+        {
+          label: "พยายามฯ",
+          data: labels.map((s) => summary.bySex[s].attempt),
+          backgroundColor: COLORS.attempt + "d9",
+          borderRadius: 6,
+        },
       ],
     },
     options: {
       maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true, title: { display: true, text: "ราย" } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, title: { display: true, text: "ราย" } },
+      },
     },
   });
 }
@@ -321,14 +517,26 @@ function renderAgeChart(summary) {
     data: {
       labels: groups,
       datasets: [
-        { label: "ฆ่าตัวตายสำเร็จ", data: groups.map((g) => summary.byAge[g].die), backgroundColor: COLORS.death, stack: "a" },
-        { label: "พยายามฯ", data: groups.map((g) => summary.byAge[g].attempt), backgroundColor: COLORS.attempt, stack: "a" },
+        {
+          label: "ฆ่าตัวตายสำเร็จ",
+          data: groups.map((g) => summary.byAge[g].die),
+          backgroundColor: COLORS.death + "d9",
+          stack: "a",
+          borderRadius: 4,
+        },
+        {
+          label: "พยายามฯ",
+          data: groups.map((g) => summary.byAge[g].attempt),
+          backgroundColor: COLORS.attempt + "d9",
+          stack: "a",
+          borderRadius: 4,
+        },
       ],
     },
     options: {
       maintainAspectRatio: false,
       scales: {
-        x: { stacked: true },
+        x: { stacked: true, grid: { display: false } },
         y: { stacked: true, beginAtZero: true, title: { display: true, text: "ราย" } },
       },
     },
@@ -341,13 +549,21 @@ function renderMethodChart(summary) {
     type: "bar",
     data: {
       labels: entries.map(([name]) => name),
-      datasets: [{ label: "จำนวนครั้งที่ใช้", data: entries.map(([, n]) => n), backgroundColor: COLORS.teal }],
+      datasets: [{
+        label: "จำนวนครั้งที่ใช้",
+        data: entries.map(([, n]) => n),
+        backgroundColor: COLORS.teal + "d9",
+        borderRadius: 6,
+      }],
     },
     options: {
       maintainAspectRatio: false,
       indexAxis: "y",
       plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, title: { display: true, text: "ครั้ง" } } },
+      scales: {
+        x: { beginAtZero: true, title: { display: true, text: "ครั้ง" } },
+        y: { grid: { display: false } },
+      },
     },
   });
 }
@@ -404,12 +620,13 @@ function render() {
   const months = selectedMonths(periodValue);
 
   const summary = summarize(provinces, months);
-  /* ตาราง + กราฟรายจังหวัดต้องเห็นครบทุกจังหวัด (ตามช่วงเวลาที่เลือก) */
+  /* ตาราง + กราฟรายจังหวัด + ข้อค้นพบ ต้องเห็นครบทุกจังหวัด (ตามช่วงเวลาที่เลือก) */
   const allProvinceSummary = provinceValue === "all"
     ? summary
     : summarize(DB.provinces, months);
 
   renderKpis(summary, provinces, months);
+  renderInsights(allProvinceSummary, months);
   renderTrendChart(summary, months);
   renderProvinceRateChart(allProvinceSummary, months);
   renderAccessChart(allProvinceSummary, months);
@@ -437,11 +654,12 @@ async function init() {
     DB = await response.json();
   } catch (error) {
     document.querySelector("main").innerHTML =
-      `<p style="padding:40px;text-align:center;color:#c0392b;">
+      `<p style="padding:60px 20px;text-align:center;color:#f87171;">
         เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
     return;
   }
 
+  initChartTheme();
   setText("periodLabel", `ข้อมูล ณ ${DB.meta.periodLabel} (${formatNumber(DB.meta.daysCovered)} วัน)`);
   setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
   populateProvinceFilter();
