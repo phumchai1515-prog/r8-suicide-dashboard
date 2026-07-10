@@ -12,7 +12,8 @@ class TestValidateEntry(unittest.TestCase):
     def make_entry(**overrides):
         entry = {
             "old": 100, "new": 50, "total": 150,
-            "accessRate": 75.0, "noRepeat": 90, "kpi": 30.0,
+            "accessRate": 75.0, "noRepeat": 90,
+            "kpi": 40.0,  # ติดตาม ≥2 + ไม่ก่อซ้ำ (60) ÷ ทั้งหมด (150) × 100
             "pop1560": 100_000, "estimated": 200,
             "follow1": 80, "follow1NoRepeat": 70,
             "follow2": 65, "follow2NoRepeat": 60,
@@ -35,6 +36,20 @@ class TestValidateEntry(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_smiv.validate_entry("ทดสอบ", self.make_entry(kpi=35.0))
 
+    def test_accepts_matching_file_rates(self):
+        parse_smiv.validate_entry(  # ต้องไม่ raise
+            "ทดสอบ", self.make_entry(), file_access_rate=75.0, file_kpi=30.0)
+
+    def test_rejects_file_access_rate_mismatch(self):
+        with self.assertRaises(ValueError):
+            parse_smiv.validate_entry(
+                "ทดสอบ", self.make_entry(), file_access_rate=80.0, file_kpi=30.0)
+
+    def test_rejects_file_kpi_mismatch(self):
+        with self.assertRaises(ValueError):
+            parse_smiv.validate_entry(
+                "ทดสอบ", self.make_entry(), file_access_rate=75.0, file_kpi=35.0)
+
 
 class TestRealData(unittest.TestCase):
     @classmethod
@@ -48,7 +63,7 @@ class TestRealData(unittest.TestCase):
         total = self.smiv["รวม"]
         self.assertEqual(total["total"], 16_513)
         self.assertEqual(total["estimated"], 19_286)
-        self.assertEqual(total["kpi"], 20.0)
+        self.assertEqual(total["kpi"], 23.36)  # ติดตาม ≥2 + ไม่ก่อซ้ำ ÷ ทั้งหมด × 100
         self.assertEqual(total["accessRate"], 85.62)
 
     def test_all_provinces_present(self):

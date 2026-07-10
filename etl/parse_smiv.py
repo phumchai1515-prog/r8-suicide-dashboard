@@ -3,6 +3,8 @@
 SMI-V = ผู้ป่วยจิตเวชและสารเสพติดที่มีความเสี่ยงสูงต่อการก่อความรุนแรง (1B030-33)
 ข้อมูลเป็นยอดสะสมรายจังหวัด (ไม่มีมิติเวลา/อำเภอ)
 ประชากรกลางปี 2567 (15-60 ปี) ดึงจากคอลัมน์ H ของไฟล์ export เดียวกัน
+อัตราเข้าถึงบริการ = (ทั้งหมด ÷ ประมาณการ) × 100 — ตรวจทานกับค่าในไฟล์ HDC
+% ดูแลต่อเนื่อง = (ติดตาม ≥2 ครั้ง + ไม่ก่อซ้ำ ÷ ผู้ป่วยทั้งหมด) × 100
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ RATE_TOLERANCE = 0.1  # เผื่อการปัดเศษของร�
 # เป้าหมายตามเอกสารชี้แจงตัวชี้วัด SMI-V ปีงบ 2569
 TARGETS = {"round6": 35.0, "round9": 37.0, "round12": 40.0}
 CURRENT_ROUND = "round9"  # ข้อมูล ณ 10 ก.ค. 2569 ~ รอบ 9 เดือน
+ACCESS_TARGET = 40.0  # เกณฑ์ผ่านอัตราเข้าถึงบริการ: % เข้าถึงบริการ ≥ 40%
 
 
 def parse_smiv(path: Path) -> dict[str, dict]:
@@ -64,21 +67,29 @@ def parse_smiv(path: Path) -> dict[str, dict]:
         key = "รวม" if area == "รวม" else area
         if key != "รวม" and key not in PROVINCES:
             raise ValueError(f"พบพื้นที่ที่ไม่รู้จักในไฟล์ SMI-V: '{area}'")
+        total_patients = int(row[COL_TOTAL])
+        estimated = int(row[COL_ESTIMATED])
+        follow2_no_repeat = int(row[COL_FOLLOW2_NO_REPEAT])
         entry = {
             "old": int(row[COL_OLD]),
             "new": int(row[COL_NEW]),
-            "total": int(row[COL_TOTAL]),
-            "accessRate": float(row[COL_ACCESS_RATE]),
+            "total": total_patients,
+            # อัตราเข้าถึงบริการ: (ทั้งหมด ÷ ประมาณการ) × 100
+            "accessRate": round(total_patients / estimated * 100, 2),
             "noRepeat": int(row[COL_NO_REPEAT]),
-            "kpi": float(row[COL_KPI]),
+            # % ดูแลต่อเนื่อง: (ติดตาม ≥2 ครั้ง + ไม่ก่อซ้ำ ÷ ผู้ป่วยทั้งหมด) × 100
+            "kpi": round(follow2_no_repeat / total_patients * 100, 2),
             "pop1560": int(row[COL_POP_15_60]),
-            "estimated": int(row[COL_ESTIMATED]),
+            "estimated": estimated,
             "follow1": int(row[COL_FOLLOW1]),
             "follow1NoRepeat": int(row[COL_FOLLOW1_NO_REPEAT]),
             "follow2": int(row[COL_FOLLOW2]),
-            "follow2NoRepeat": int(row[COL_FOLLOW2_NO_REPEAT]),
+            "follow2NoRepeat": follow2_no_repeat,
         }
-        validate_entry(area, entry)
+        validate_entry(
+            area, entry,
+            file_access_rate=float(row[COL_ACCESS_RATE]),
+            file_kpi=float(row[COL_KPI]))
         result[key] = entry
 
     missing = [p for p in PROVINCES if p not in result]
@@ -89,18 +100,33 @@ def parse_smiv(path: Path) -> dict[str, dict]:
     return result
 
 
-def validate_entry(area: str, e: dict) -> None:
-    """ตรวจความสอดคล้องภายในแถว: D=B+C และร้อยละตรงกับสูตรในหัวตาราง"""
+def validate_entry(
+    area: str,
+    e: dict,
+    file_access_rate: float | None = None,
+    file_kpi: float | None = None,
+) -> None:
+    """ตรวจความสอดคล้อง: D=B+C, ร้อยละตรงสูตร และตรงกับค่าที่ HDC รายงานในไฟล์"""
     if e["total"] != e["old"] + e["new"]:
         raise ValueError(f"{area}: ทั้งหมด ({e['total']}) != เก่า+ใหม่")
     expected_access = e["total"] / e["estimated"] * 100
     if abs(expected_access - e["accessRate"]) > RATE_TOLERANCE:
         raise ValueError(
             f"{area}: อัตราเข้าถึง {e['accessRate']} ไม่ตรงสูตร D/I ({expected_access:.2f})")
-    expected_kpi = e["follow2NoRepeat"] / e["estimated"] * 100
+    expected_kpi = e["follow2NoRepeat"] / e["total"] * 100
     if abs(expected_kpi - e["kpi"]) > RATE_TOLERANCE:
         raise ValueError(
-            f"{area}: KPI {e['kpi']} ไม่ตรงสูตร N/I ({expected_kpi:.2f})")
+            f"{area}: % ดูแลต่อเนื่อง {e['kpi']} ไม่ตรงสูตร N/D ({expected_kpi:.2f})")
+    if file_access_rate is not None and abs(e["accessRate"] - file_access_rate) > RATE_TOLERANCE:
+        raise ValueError(
+            f"{area}: อัตราเข้าถึงที่คำนวณ ({e['accessRate']}) "
+            f"ไม่ตรงค่าในไฟล์ HDC ({file_access_rate})")
+    if file_kpi is not None:
+        # คอลัมน์ G ของ HDC ใช้สูตร N/I (เทียบประมาณการ) — ตรวจความถูกต้องของไฟล์ต้นทาง
+        hdc_kpi = e["follow2NoRepeat"] / e["estimated"] * 100
+        if abs(hdc_kpi - file_kpi) > RATE_TOLERANCE:
+            raise ValueError(
+                f"{area}: ค่า KPI ในไฟล์ HDC ({file_kpi}) ไม่ตรงสูตร N/I ({hdc_kpi:.2f})")
 
 
 def extract_population(smiv: dict[str, dict]) -> dict[str, int]:
@@ -119,6 +145,7 @@ def main() -> int:
             "asOfLabel": "ข้อมูลสะสมปีงบประมาณ 2569 (ณ 10 กรกฎาคม 2569)",
             "targets": TARGETS,
             "currentRound": CURRENT_ROUND,
+            "accessTarget": ACCESS_TARGET,
             "populationYear": 2567,
             "source": "ระบบคลังข้อมูลด้านการแพทย์และสุขภาพ (HDC) — ประชากรกลางปี 2567 (15-60 ปี) จากรายงาน SMI-V",
         },
@@ -131,8 +158,9 @@ def main() -> int:
 
     total = smiv["รวม"]
     print(f"ผู้ป่วย SMI-V ทั้งหมด {total['total']:,} คน (ประมาณการ {total['estimated']:,})")
-    print(f"KPI ดูแลต่อเนื่อง+ไม่ก่อซ้ำ: {total['kpi']}% (เป้ารอบ 9 เดือน ≥ {TARGETS['round9']}%)")
-    print(f"อัตราเข้าถึงบริการ: {total['accessRate']}%")
+    print(f"% ดูแลต่อเนื่อง+ไม่ก่อซ้ำ (ต่อผู้ป่วยทั้งหมด): {total['kpi']}% "
+          f"(เป้ารอบ 9 เดือน ≥ {TARGETS['round9']}%)")
+    print(f"อัตราเข้าถึงบริการ: {total['accessRate']}% (เกณฑ์ผ่าน ≥ {ACCESS_TARGET:.0f}%)")
     print(f"ประชากรกลางปี 2567 (15-60 ปี) เขต 8: {population['รวม']:,}")
     print(f"เขียนผลลัพธ์: {OUTPUT_PATH}")
     return 0

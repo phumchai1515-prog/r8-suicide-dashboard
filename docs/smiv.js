@@ -78,6 +78,12 @@ function currentTarget() {
   return DB.meta.targets[DB.meta.currentRound];
 }
 
+const DEFAULT_ACCESS_TARGET = 40;
+
+function accessTarget() {
+  return DB.meta.accessTarget ?? DEFAULT_ACCESS_TARGET;
+}
+
 function patientRate(province) {
   return DB.data[province].total / DB.population[province] * PER_HUNDRED_THOUSAND;
 }
@@ -96,14 +102,15 @@ function renderKpis() {
   setText("kpi1Target", targetText);
   setText("kpi1Detail",
     `ติดตามอย่างน้อย 2 ครั้งและไม่ก่อความรุนแรงซ้ำ ${formatNumber(total.follow2NoRepeat)} คน ` +
-    `จากประมาณการผู้ป่วยในพื้นที่ ${formatNumber(total.estimated)} คน`);
+    `จากผู้ป่วยทั้งหมด ${formatNumber(total.total)} คน`);
   setBadge("kpi1Badge", kpi1Pass);
   setCardStatus("kpi1Card", kpi1Pass);
   setRing("kpi1Ring", "kpi1RingNum", total.kpi, `${formatNumber(total.kpi, 1)}%`, kpi1Pass);
 
-  const kpi2Pass = total.accessRate >= target;
+  const kpi2Pass = total.accessRate >= accessTarget();
   countUp("kpi2Value", total.accessRate, 1);
-  setText("kpi2Target", targetText);
+  setText("kpi2Target",
+    `เกณฑ์ผ่าน: % เข้าถึงบริการ ≥ ${formatNumber(accessTarget())}% (ประมาณการผู้ป่วยในพื้นที่ = 100%)`);
   setText("kpi2Detail",
     `ผู้ป่วยสะสม ${formatNumber(total.total)} คน จากประมาณการ ${formatNumber(total.estimated)} คน ` +
     `(เกิน 100% ได้เมื่อพบผู้ป่วยจริงมากกว่าประมาณการ)`);
@@ -144,8 +151,12 @@ function renderInsights() {
     (a, b) => DB.data[b].accessRate - DB.data[a].accessRate)[0];
   const worstAccess = [...DB.provinces].sort(
     (a, b) => DB.data[a].accessRate - DB.data[b].accessRate)[0];
+  const accessPassed = DB.provinces.filter(
+    (p) => DB.data[p].accessRate >= accessTarget());
   items.push({ tone: "accent",
-    text: `การเข้าถึงบริการสูงสุด <strong>${bestAccess}</strong> (${formatNumber(DB.data[bestAccess].accessRate, 1)}%) · ` +
+    text: `เข้าถึงบริการผ่านเกณฑ์ (≥ ${formatNumber(accessTarget())}%) ` +
+      `<strong>${accessPassed.length}</strong> จาก ${DB.provinces.length} จังหวัด · ` +
+      `สูงสุด <strong>${bestAccess}</strong> (${formatNumber(DB.data[bestAccess].accessRate, 1)}%) · ` +
       `ต่ำสุด <strong>${worstAccess}</strong> (${formatNumber(DB.data[worstAccess].accessRate, 1)}%)` });
 
   const topRate = [...DB.provinces].sort((a, b) => patientRate(b) - patientRate(a))[0];
@@ -225,20 +236,25 @@ function renderKpiChart() {
 }
 
 function renderAccessChart() {
+  const target = accessTarget();
+  const values = DB.provinces.map((p) => DB.data[p].accessRate);
   new Chart(document.getElementById("accessChart"), {
     type: "bar",
     data: {
       labels: DB.provinces,
-      datasets: [{
-        label: "% เข้าถึงบริการ (สะสม)",
-        data: DB.provinces.map((p) => DB.data[p].accessRate),
-        backgroundColor: COLORS.accent + "d9",
-        borderRadius: 6,
-      }],
+      datasets: [
+        {
+          label: "% เข้าถึงบริการ (สะสม)",
+          data: values,
+          backgroundColor: values.map((v) =>
+            v >= target ? COLORS.good + "d9" : COLORS.attempt + "d9"),
+          borderRadius: 6,
+        },
+        targetLineDataset(`เกณฑ์ผ่าน ≥ ${formatNumber(target)}%`, target),
+      ],
     },
     options: {
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false } },
         y: { beginAtZero: true, title: { display: true, text: "%" } },
@@ -376,13 +392,15 @@ function renderNoRepeatChart() {
 function renderTable() {
   const target = currentTarget();
   setText("tableSub",
-    `เกณฑ์ผ่าน = % ดูแลต่อเนื่องและไม่ก่อความรุนแรงซ้ำ ≥ ${target}% (${ROUND_LABELS[DB.meta.currentRound]}) · เลื่อนดูข้อมูลด้านขวาได้`);
+    `เกณฑ์ผ่าน: % เข้าถึงบริการ ≥ ${accessTarget()}% · % ดูแลต่อเนื่องและไม่ก่อความรุนแรงซ้ำ ≥ ${target}% ` +
+    `(${ROUND_LABELS[DB.meta.currentRound]}) · เลื่อนดูข้อมูลด้านขวาได้`);
   const tbody = document.querySelector("#smivTable tbody");
   tbody.textContent = "";
 
   const makeRow = (name, entry, population, isTotal) => {
     const rate = entry.total / population * PER_HUNDRED_THOUSAND;
     const isPass = entry.kpi >= target;
+    const isAccessPass = entry.accessRate >= accessTarget();
     const row = document.createElement("tr");
     if (isTotal) row.className = "row-total";
     row.innerHTML = `
@@ -393,7 +411,8 @@ function renderTable() {
       <td>${formatNumber(entry.total)}</td>
       <td>${formatNumber(rate, 1)}</td>
       <td>${formatNumber(entry.estimated)}</td>
-      <td>${formatNumber(entry.accessRate, 1)}</td>
+      <td>${formatNumber(entry.accessRate, 1)}
+        <span class="cell-badge ${isAccessPass ? "pass" : "fail"}">${isAccessPass ? "ผ่าน" : "ไม่ผ่าน"}</span></td>
       <td>${formatNumber(entry.follow2NoRepeat)}</td>
       <td>${formatNumber(entry.kpi, 1)}</td>
       <td><span class="cell-badge ${isPass ? "pass" : "fail"}">${isPass ? "ผ่าน" : "ไม่ผ่าน"}</span></td>`;
