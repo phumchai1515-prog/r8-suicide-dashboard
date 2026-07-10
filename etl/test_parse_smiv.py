@@ -61,11 +61,10 @@ class TestRealData(unittest.TestCase):
             self.assertEqual(province_sum, self.smiv["รวม"][field], field)
 
     def test_population_2567_totals(self):
-        path = parse_smiv.RAW_DIR / parse_smiv.POP2567_FILE
-        if not path.exists():
-            self.skipTest("ไม่มีไฟล์ประชากร 2567")
-        population = parse_smiv.parse_population(path)
-        self.assertEqual(population["รวม"], 5_457_956)
+        population = parse_smiv.extract_population(self.smiv)
+        self.assertEqual(population["รวม"], 3_702_629)
+        province_sum = sum(population[p] for p in parse_smiv.PROVINCES)
+        self.assertEqual(province_sum, population["รวม"])
 
 
 if __name__ == "__main__":

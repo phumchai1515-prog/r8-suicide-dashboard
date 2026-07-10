@@ -1,7 +1,8 @@
-"""ETL: แปลงข้อมูล SMI-V (HDC export) + ประชากรกลางปี 2567 เป็น docs/smiv-data.json
+"""ETL: แปลงข้อมูล SMI-V (HDC export) เป็น docs/smiv-data.json
 
 SMI-V = ผู้ป่วยจิตเวชและสารเสพติดที่มีความเสี่ยงสูงต่อการก่อความรุนแรง (1B030-33)
 ข้อมูลเป็นยอดสะสมรายจังหวัด (ไม่มีมิติเวลา/อำเภอ)
+ประชากรกลางปี 2567 (15-60 ปี) ดึงจากคอลัมน์ H ของไฟล์ export เดียวกัน
 """
 
 from __future__ import annotations
@@ -13,15 +14,14 @@ from pathlib import Path
 
 import openpyxl
 
-from parse import PROVINCES, parse_population
+from parse import PROVINCES
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 OUTPUT_PATH = PROJECT_ROOT / "docs" / "smiv-data.json"
 
-SMIV_FILE = "export_data_20260709_1783610942_H763Y924CA.xlsx"
+SMIV_FILE = "export_data_20260710_1783648578_R0SK3MVLDZ.xlsx"
 SMIV_SHEET = "Sheet1"
-POP2567_FILE = "ข้อมูลประชากรกลางปี-2567 (1).xlsx"
 
 SMIV_DATA_START_ROW = 3  # แถวข้อมูลจังหวัดแรก (0-indexed)
 
@@ -44,7 +44,7 @@ RATE_TOLERANCE = 0.1  # เผื่อการปัดเศษของร�
 
 # เป้าหมายตามเอกสารชี้แจงตัวชี้วัด SMI-V ปีงบ 2569
 TARGETS = {"round6": 35.0, "round9": 37.0, "round12": 40.0}
-CURRENT_ROUND = "round9"  # ข้อมูล ณ 9 ก.ค. 2569 ~ รอบ 9 เดือน
+CURRENT_ROUND = "round9"  # ข้อมูล ณ 10 ก.ค. 2569 ~ รอบ 9 เดือน
 
 
 def parse_smiv(path: Path) -> dict[str, dict]:
@@ -103,19 +103,24 @@ def validate_entry(area: str, e: dict) -> None:
             f"{area}: KPI {e['kpi']} ไม่ตรงสูตร N/I ({expected_kpi:.2f})")
 
 
+def extract_population(smiv: dict[str, dict]) -> dict[str, int]:
+    """ประชากรกลางปี 2567 (15-60 ปี) จากคอลัมน์ H ของไฟล์ export"""
+    return {area: entry["pop1560"] for area, entry in smiv.items()}
+
+
 def main() -> int:
     smiv = parse_smiv(RAW_DIR / SMIV_FILE)
-    population = parse_population(RAW_DIR / POP2567_FILE)
+    population = extract_population(smiv)
 
     output = {
         "meta": {
             "generatedAt": datetime.now().isoformat(timespec="seconds"),
             "fiscalYear": 2569,
-            "asOfLabel": "ข้อมูลสะสมปีงบประมาณ 2569 (ณ 9 กรกฎาคม 2569)",
+            "asOfLabel": "ข้อมูลสะสมปีงบประมาณ 2569 (ณ 10 กรกฎาคม 2569)",
             "targets": TARGETS,
             "currentRound": CURRENT_ROUND,
             "populationYear": 2567,
-            "source": "ระบบคลังข้อมูลด้านการแพทย์และสุขภาพ (HDC) และประชากรกลางปี 2567 กองยุทธศาสตร์และแผนงาน",
+            "source": "ระบบคลังข้อมูลด้านการแพทย์และสุขภาพ (HDC) — ประชากรกลางปี 2567 (15-60 ปี) จากรายงาน SMI-V",
         },
         "provinces": PROVINCES,
         "population": population,
@@ -128,7 +133,7 @@ def main() -> int:
     print(f"ผู้ป่วย SMI-V ทั้งหมด {total['total']:,} คน (ประมาณการ {total['estimated']:,})")
     print(f"KPI ดูแลต่อเนื่อง+ไม่ก่อซ้ำ: {total['kpi']}% (เป้ารอบ 9 เดือน ≥ {TARGETS['round9']}%)")
     print(f"อัตราเข้าถึงบริการ: {total['accessRate']}%")
-    print(f"ประชากรกลางปี 2567 เขต 8: {population['รวม']:,}")
+    print(f"ประชากรกลางปี 2567 (15-60 ปี) เขต 8: {population['รวม']:,}")
     print(f"เขียนผลลัพธ์: {OUTPUT_PATH}")
     return 0
 
