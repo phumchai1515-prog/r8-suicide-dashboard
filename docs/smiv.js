@@ -1,4 +1,5 @@
-/* Dashboard SMI-V เขตสุขภาพที่ 8 — อ่าน smiv-data.json (ยอดสะสมรายจังหวัด) แล้ว render */
+/* Dashboard SMI-V เขตสุขภาพที่ 8 — ดึงข้อมูลสดจาก HDC OpenData API (smiv-api.js)
+   ถ้าเชื่อมต่อไม่ได้ ใช้ smiv-data.json (snapshot จาก ETL) เป็นข้อมูลสำรอง */
 
 "use strict";
 
@@ -427,16 +428,29 @@ function renderTable() {
 
 /* ---------- main ---------- */
 
+async function loadFallbackData() {
+  const response = await fetch("smiv-data.json");
+  if (!response.ok) throw new Error(`โหลดข้อมูลสำรองไม่สำเร็จ (HTTP ${response.status})`);
+  const db = await response.json();
+  return {
+    ...db,
+    meta: { ...db.meta, asOfLabel: `${db.meta.asOfLabel} · ข้อมูลสำรอง (เชื่อมต่อ HDC API ไม่ได้)` },
+  };
+}
+
 async function init() {
   try {
-    const response = await fetch("smiv-data.json");
-    if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (HTTP ${response.status})`);
-    DB = await response.json();
-  } catch (error) {
-    document.querySelector("main").innerHTML =
-      `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
-        เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
-    return;
+    DB = await loadSmivFromApi();
+  } catch (apiError) {
+    console.error("โหลดข้อมูลจาก HDC API ไม่สำเร็จ ใช้ข้อมูลสำรองแทน:", apiError);
+    try {
+      DB = await loadFallbackData();
+    } catch (error) {
+      document.querySelector("main").innerHTML =
+        `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
+          เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
+      return;
+    }
   }
 
   initChartTheme();
