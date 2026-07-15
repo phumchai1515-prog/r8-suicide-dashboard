@@ -426,6 +426,33 @@ function renderTable() {
   tbody.appendChild(makeRow("รวมเขตสุขภาพที่ 8", DB.data["รวม"], DB.population["รวม"], true));
 }
 
+/* ---------- live status ---------- */
+
+function formatThaiDateTime(date) {
+  return date.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "short" });
+}
+
+function renderLiveStatus(isLiveData, fetchedAt) {
+  const el = document.getElementById("liveStatus");
+  el.hidden = false;
+  el.textContent = "";
+
+  const dot = document.createElement("span");
+  dot.className = "live-dot";
+  el.appendChild(dot);
+
+  if (isLiveData) {
+    el.className = "live-status live";
+    el.appendChild(document.createTextNode(
+      `เชื่อมต่อ HDC OpenData API โดยตรง — ข้อมูลอัพเดทใหม่ทุกครั้งที่เปิดหน้าเว็บ ` +
+      `(ดึงข้อมูลเมื่อ ${formatThaiDateTime(fetchedAt)} น.)`));
+  } else {
+    el.className = "live-status offline";
+    el.appendChild(document.createTextNode(
+      "เชื่อมต่อ HDC ไม่ได้ขณะนี้ — แสดงข้อมูลสำรองชุดล่าสุด (รีเฟรชหน้าเว็บเพื่อลองเชื่อมต่อใหม่)"));
+  }
+}
+
 /* ---------- main ---------- */
 
 async function loadFallbackData() {
@@ -439,10 +466,13 @@ async function loadFallbackData() {
 }
 
 async function init() {
+  const fetchedAt = new Date();
+  let isLiveData = true;
   try {
     DB = await loadSmivFromApi();
   } catch (apiError) {
     console.error("โหลดข้อมูลจาก HDC API ไม่สำเร็จ ใช้ข้อมูลสำรองแทน:", apiError);
+    isLiveData = false;
     try {
       DB = await loadFallbackData();
     } catch (error) {
@@ -456,6 +486,8 @@ async function init() {
   initChartTheme();
   setText("periodLabel", DB.meta.asOfLabel);
   setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
+  setText("fetchedAt", `${formatThaiDateTime(fetchedAt)} น.`);
+  renderLiveStatus(isLiveData, fetchedAt);
   renderKpis();
   renderInsights();
   renderKpiChart();

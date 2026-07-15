@@ -111,11 +111,12 @@ function aggregateRows(rows, province) {
   return { ...totals, dateCom: latestDate };
 }
 
+/* ส่งแบบ form-urlencoded เพื่อเลี่ยง CORS preflight (OPTIONS โดน Cloudflare challenge 403)
+   — Content-Type: application/json ทำให้เบราว์เซอร์ยิง preflight แล้วเชื่อมต่อไม่สำเร็จ */
 async function fetchProvinceRows(provinceCode, fiscalYear) {
   const response = await fetch(HDC_API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       tableName: HDC_TABLE_NAME,
       year: String(fiscalYear),
       province: provinceCode,
