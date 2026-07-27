@@ -43,6 +43,11 @@ const THAI_MONTH_NAMES = [
 const BUDDHIST_ERA_OFFSET = 543;
 const FISCAL_YEAR_START_MONTH = 10; // ปีงบประมาณไทยเริ่ม ต.ค.
 
+/* HDC บางช่วงตอบช้าหรือหลุดเป็นครั้งคราว จึงตั้งเวลาหมดรอและยิงซ้ำก่อนยอมแพ้ */
+const REQUEST_TIMEOUT_MS = 15000;
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 800;
+
 /* ฟิลด์ตัวเลขที่ต้องมีในทุกแถวของ API */
 const REQUIRED_FIELDS = [
   "pop", "new", "old", "all_cid", "not_repeat_cid",
@@ -111,9 +116,32 @@ function aggregateRows(rows, province) {
   return { ...totals, dateCom: latestDate };
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/* เบราว์เซอร์เก่าบางรุ่นยังไม่มี AbortSignal.timeout — ถ้าไม่มีก็ยิงแบบไม่จำกัดเวลาแทนที่จะพัง */
+function timeoutSignal() {
+  return typeof AbortSignal?.timeout === "function"
+    ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    : undefined;
+}
+
+/* แปลง error ของ fetch เป็นข้อความที่ผู้ใช้อ่านแล้วรู้ว่าต้องแก้ที่ไหน */
+function describeFetchError(error) {
+  if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+    return `HDC ไม่ตอบภายใน ${REQUEST_TIMEOUT_MS / 1000} วินาที`;
+  }
+  if (error instanceof TypeError) {
+    return "เบราว์เซอร์ติดต่อ opendata.moph.go.th ไม่ได้ " +
+      "(อินเทอร์เน็ตหลุด หรือไฟร์วอลล์/พร็อกซีของเครือข่ายบล็อกไว้)";
+  }
+  return error?.message ?? "ไม่ทราบสาเหตุ";
+}
+
 /* ส่งแบบ form-urlencoded เพื่อเลี่ยง CORS preflight (OPTIONS โดน Cloudflare challenge 403)
    — Content-Type: application/json ทำให้เบราว์เซอร์ยิง preflight แล้วเชื่อมต่อไม่สำเร็จ */
-async function fetchProvinceRows(provinceCode, fiscalYear) {
+async function requestProvinceRows(provinceCode, fiscalYear) {
   const response = await fetch(HDC_API_URL, {
     method: "POST",
     body: new URLSearchParams({
@@ -122,9 +150,24 @@ async function fetchProvinceRows(provinceCode, fiscalYear) {
       province: provinceCode,
       type: "json",
     }),
+    signal: timeoutSignal(),
   });
   if (!response.ok) throw new Error(`HDC API ตอบกลับ HTTP ${response.status}`);
   return response.json();
+}
+
+/* ยิงซ้ำก่อนยอมแพ้ เพราะถ้าจังหวัดใดจังหวัดหนึ่งพลาด หน้าเว็บจะตกไปใช้ข้อมูลสำรองทั้งหมด */
+async function fetchProvinceRows(provinceCode, fiscalYear, province) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await requestProvinceRows(provinceCode, fiscalYear);
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_ATTEMPTS) await delay(RETRY_BASE_DELAY_MS * attempt);
+    }
+  }
+  throw new Error(`${province}: ${describeFetchError(lastError)}`);
 }
 
 /* แปลงยอดรวมจาก API เป็น entry รูปแบบเดียวกับ smiv-data.json
@@ -201,7 +244,7 @@ async function loadSmivFromApi() {
 
   const provinces = Object.keys(PROVINCE_CODES);
   const results = await Promise.all(
-    provinces.map((name) => fetchProvinceRows(PROVINCE_CODES[name], fiscalYear)));
+    provinces.map((name) => fetchProvinceRows(PROVINCE_CODES[name], fiscalYear, name)));
 
   const entriesByProvince = {};
   let latestDate = null;

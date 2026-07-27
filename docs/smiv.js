@@ -1,4 +1,5 @@
 /* Dashboard SMI-V เขตสุขภาพที่ 8 — ดึงข้อมูลสดจาก HDC OpenData API (smiv-api.js)
+   อัปเดตเองอัตโนมัติระหว่างเปิดหน้าค้างไว้ โดยไม่ต้องกดรีเฟรช
    ถ้าเชื่อมต่อไม่ได้ ใช้ smiv-data.json (snapshot จาก ETL) เป็นข้อมูลสำรอง */
 
 "use strict";
@@ -24,9 +25,27 @@ const ROUND_LABELS = {
   round12: "รอบ 12 เดือน",
 };
 
+/* HDC ประมวลผลข้อมูลวันละครั้ง ดึงซ้ำทุก 15 นาทีจึงเพียงพอ
+   ส่วนตอนต่อไม่ได้ให้ลองถี่ขึ้น จะได้กลับมาแสดงข้อมูลสดเร็วเมื่อเน็ตกลับมา */
+const LIVE_REFRESH_MS = 15 * 60 * 1000;
+const OFFLINE_RETRY_MS = 2 * 60 * 1000;
+const STALE_AFTER_MS = 5 * 60 * 1000;
+const MS_PER_MINUTE = 60 * 1000;
+
+const STATUS = { LIVE: "live", STALE: "stale", OFFLINE: "offline" };
+
 let DB = null;
+let lastLiveFetchAt = null;
+let isLastRefreshOk = false;
+let isRefreshing = false;
+let refreshTimer = null;
+let animateNumbers = true;
 
 /* ---------- utilities ---------- */
+
+function minutesOf(ms) {
+  return Math.round(ms / MS_PER_MINUTE);
+}
 
 function formatNumber(value, digits = 0) {
   return value.toLocaleString("th-TH", {
@@ -41,7 +60,7 @@ function setText(id, text) {
 
 function countUp(id, target, digits = 0) {
   const el = document.getElementById(id);
-  if (REDUCED_MOTION) {
+  if (REDUCED_MOTION || !animateNumbers) {
     el.textContent = formatNumber(target, digits);
     return;
   }
@@ -195,6 +214,14 @@ function initChartTheme() {
   Chart.defaults.plugins.tooltip.cornerRadius = 8;
 }
 
+/* ทำลายกราฟเดิมบน canvas ก่อนวาดใหม่ ไม่งั้น Chart.js จะฟ้อง "Canvas is already in use"
+   ตอนอัปเดตข้อมูลอัตโนมัติ */
+function createChart(canvasId, config) {
+  const canvas = document.getElementById(canvasId);
+  Chart.getChart(canvas)?.destroy();
+  return new Chart(canvas, config);
+}
+
 function targetLineDataset(label, value) {
   return {
     label,
@@ -210,7 +237,7 @@ function targetLineDataset(label, value) {
 function renderKpiChart() {
   const target = currentTarget();
   const values = DB.provinces.map((p) => DB.data[p].kpi);
-  new Chart(document.getElementById("kpiChart"), {
+  createChart("kpiChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -239,7 +266,7 @@ function renderKpiChart() {
 function renderAccessChart() {
   const target = accessTarget();
   const values = DB.provinces.map((p) => DB.data[p].accessRate);
-  new Chart(document.getElementById("accessChart"), {
+  createChart("accessChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -265,7 +292,7 @@ function renderAccessChart() {
 }
 
 function renderPatientsChart() {
-  new Chart(document.getElementById("patientsChart"), {
+  createChart("patientsChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -307,7 +334,7 @@ function renderPatientsChart() {
 }
 
 function renderFollowChart() {
-  new Chart(document.getElementById("followChart"), {
+  createChart("followChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -343,7 +370,7 @@ function renderFollowChart() {
 }
 
 function renderRateChart() {
-  new Chart(document.getElementById("rateChart"), {
+  createChart("rateChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -366,7 +393,7 @@ function renderRateChart() {
 }
 
 function renderNoRepeatChart() {
-  new Chart(document.getElementById("noRepeatChart"), {
+  createChart("noRepeatChart", {
     type: "bar",
     data: {
       labels: DB.provinces,
@@ -432,25 +459,29 @@ function formatThaiDateTime(date) {
   return date.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "short" });
 }
 
-function renderLiveStatus(isLiveData, fetchedAt) {
+function statusMessage(status, fetchedAt, apiErrorMessage) {
+  if (status === STATUS.LIVE) {
+    return `เชื่อมต่อ HDC OpenData API โดยตรง — อัปเดตเองอัตโนมัติทุก ${minutesOf(LIVE_REFRESH_MS)} นาที ` +
+      `(ดึงข้อมูลล่าสุดเมื่อ ${formatThaiDateTime(fetchedAt)} น.)`;
+  }
+  if (status === STATUS.STALE) {
+    return `แสดงข้อมูลสดที่ดึงไว้เมื่อ ${formatThaiDateTime(fetchedAt)} น. — ` +
+      `อัปเดตรอบล่าสุดไม่สำเร็จ (${apiErrorMessage}) กำลังลองใหม่อัตโนมัติ`;
+  }
+  return `เชื่อมต่อ HDC ไม่ได้ขณะนี้ — แสดงข้อมูลสำรองชุดล่าสุด (สาเหตุ: ${apiErrorMessage}) ` +
+    `กำลังลองเชื่อมต่อใหม่อัตโนมัติทุก ${minutesOf(OFFLINE_RETRY_MS)} นาที`;
+}
+
+function renderLiveStatus(status, fetchedAt, apiErrorMessage) {
   const el = document.getElementById("liveStatus");
   el.hidden = false;
   el.textContent = "";
+  el.className = `live-status ${status}`;
 
   const dot = document.createElement("span");
   dot.className = "live-dot";
   el.appendChild(dot);
-
-  if (isLiveData) {
-    el.className = "live-status live";
-    el.appendChild(document.createTextNode(
-      `เชื่อมต่อ HDC OpenData API โดยตรง — ข้อมูลอัพเดทใหม่ทุกครั้งที่เปิดหน้าเว็บ ` +
-      `(ดึงข้อมูลเมื่อ ${formatThaiDateTime(fetchedAt)} น.)`));
-  } else {
-    el.className = "live-status offline";
-    el.appendChild(document.createTextNode(
-      "เชื่อมต่อ HDC ไม่ได้ขณะนี้ — แสดงข้อมูลสำรองชุดล่าสุด (รีเฟรชหน้าเว็บเพื่อลองเชื่อมต่อใหม่)"));
-  }
+  el.appendChild(document.createTextNode(statusMessage(status, fetchedAt, apiErrorMessage)));
 }
 
 /* ---------- main ---------- */
@@ -465,29 +496,11 @@ async function loadFallbackData() {
   };
 }
 
-async function init() {
-  const fetchedAt = new Date();
-  let isLiveData = true;
-  try {
-    DB = await loadSmivFromApi();
-  } catch (apiError) {
-    console.error("โหลดข้อมูลจาก HDC API ไม่สำเร็จ ใช้ข้อมูลสำรองแทน:", apiError);
-    isLiveData = false;
-    try {
-      DB = await loadFallbackData();
-    } catch (error) {
-      document.querySelector("main").innerHTML =
-        `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
-          เกิดข้อผิดพลาดในการโหลดข้อมูล: ${error.message}</p>`;
-      return;
-    }
-  }
-
-  initChartTheme();
+function renderDashboard(status, fetchedAt, apiErrorMessage) {
   setText("periodLabel", DB.meta.asOfLabel);
   setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
   setText("fetchedAt", `${formatThaiDateTime(fetchedAt)} น.`);
-  renderLiveStatus(isLiveData, fetchedAt);
+  renderLiveStatus(status, fetchedAt, apiErrorMessage);
   renderKpis();
   renderInsights();
   renderKpiChart();
@@ -497,6 +510,69 @@ async function init() {
   renderRateChart();
   renderNoRepeatChart();
   renderTable();
+  animateNumbers = false; // นับเลขวิ่งเฉพาะครั้งแรก รอบอัปเดตอัตโนมัติไม่ต้องกวนสายตา
+}
+
+function showFatalError(message) {
+  document.querySelector("main").innerHTML =
+    `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
+      เกิดข้อผิดพลาดในการโหลดข้อมูล: ${message}</p>`;
+}
+
+/* ดึงข้อมูลสด 1 รอบแล้ววาดใหม่ — ถ้าพลาดแต่เคยได้ข้อมูลสดแล้ว ให้คงข้อมูลเดิมไว้
+   จะได้ไม่ถอยกลับไปใช้ข้อมูลสำรองที่เก่ากว่าเพียงเพราะเน็ตสะดุดรอบเดียว */
+async function refreshOnce() {
+  try {
+    DB = await loadSmivFromApi();
+    lastLiveFetchAt = new Date();
+    isLastRefreshOk = true;
+    renderDashboard(STATUS.LIVE, lastLiveFetchAt, "");
+    return;
+  } catch (apiError) {
+    console.error("โหลดข้อมูลจาก HDC API ไม่สำเร็จ:", apiError);
+    isLastRefreshOk = false;
+
+    if (lastLiveFetchAt !== null) {
+      renderLiveStatus(STATUS.STALE, lastLiveFetchAt, apiError.message);
+      return;
+    }
+    try {
+      DB = await loadFallbackData();
+      renderDashboard(STATUS.OFFLINE, new Date(), apiError.message);
+    } catch (fallbackError) {
+      showFatalError(fallbackError.message);
+    }
+  }
+}
+
+function scheduleNextRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, isLastRefreshOk ? LIVE_REFRESH_MS : OFFLINE_RETRY_MS);
+}
+
+async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  try {
+    await refreshOnce();
+  } finally {
+    isRefreshing = false;
+    scheduleNextRefresh();
+  }
+}
+
+/* กลับมาที่แท็บนี้แล้วข้อมูลเก่าเกินกำหนด → ดึงใหม่ทันที ไม่ต้องรอครบรอบ
+   (เบราว์เซอร์หน่วง timer ของแท็บที่ซ่อนอยู่ ข้อมูลจึงอาจค้างนานกว่าที่ตั้งไว้) */
+function refreshIfStaleOnFocus() {
+  if (document.visibilityState !== "visible") return;
+  const age = lastLiveFetchAt === null ? Infinity : Date.now() - lastLiveFetchAt.getTime();
+  if (age >= STALE_AFTER_MS) refresh();
+}
+
+function init() {
+  initChartTheme();
+  document.addEventListener("visibilitychange", refreshIfStaleOnFocus);
+  refresh();
 }
 
 init();
