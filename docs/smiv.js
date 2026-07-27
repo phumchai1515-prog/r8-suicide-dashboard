@@ -30,7 +30,6 @@ const ROUND_LABELS = {
 const LIVE_REFRESH_MS = 15 * 60 * 1000;
 const OFFLINE_RETRY_MS = 2 * 60 * 1000;
 const STALE_AFTER_MS = 5 * 60 * 1000;
-const MS_PER_MINUTE = 60 * 1000;
 
 const STATUS = { LIVE: "live", STALE: "stale", OFFLINE: "offline" };
 
@@ -42,10 +41,6 @@ let refreshTimer = null;
 let animateNumbers = true;
 
 /* ---------- utilities ---------- */
-
-function minutesOf(ms) {
-  return Math.round(ms / MS_PER_MINUTE);
-}
 
 function formatNumber(value, digits = 0) {
   return value.toLocaleString("th-TH", {

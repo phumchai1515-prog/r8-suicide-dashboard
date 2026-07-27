@@ -31,8 +31,21 @@ const PER_HUNDRED_THOUSAND = 100000;
 const MAX_PERCENT = 100; // เพดานร้อยละการเข้าถึงบริการ ไม่ให้เกิน 100
 const COUNT_UP_MS = 750;
 
+/* data.json สร้างจาก ETL แล้ว push ขึ้นเว็บ ไม่ได้ต่อ API สด
+   จึงตรวจว่ามีไฟล์รอบใหม่หรือยังเป็นระยะ หน้าที่เปิดค้างไว้จะได้เห็นข้อมูลรอบใหม่เองโดยไม่ต้องกดรีเฟรช */
+const DATA_URL = "data.json";
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const RETRY_INTERVAL_MS = 2 * 60 * 1000;
+const STALE_AFTER_MS = 5 * 60 * 1000;
+
+const STATUS = { LIVE: "live", STALE: "stale" };
+
 const charts = {};
 let DB = null;
+let lastCheckedAt = null;
+let isLastRefreshOk = false;
+let isRefreshing = false;
+let refreshTimer = null;
 
 /* ---------- utilities ---------- */
 
@@ -139,6 +152,10 @@ function hdcCount(provinces, months) {
 
 function setText(id, text) {
   document.getElementById(id).textContent = text;
+}
+
+function formatThaiDateTime(date) {
+  return date.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "short" });
 }
 
 /* ตัวเลขนับขึ้น (count-up) — เคารพ prefers-reduced-motion */
@@ -1170,11 +1187,94 @@ function populateProvinceFilter() {
   }
 }
 
-async function init() {
+/* ---------- อัปเดตข้อมูลเองอัตโนมัติ ---------- */
+
+/* cache: "no-cache" บังคับให้ถาม server ทุกครั้งว่าไฟล์เปลี่ยนหรือยัง (ยังใช้ ETag ได้)
+   ไม่งั้นเบราว์เซอร์จะคืนไฟล์ที่ cache ไว้ แล้วหน้าเว็บจะไม่มีวันเห็นข้อมูลรอบใหม่ */
+async function requestData() {
+  const response = await fetch(DATA_URL, { cache: "no-cache", signal: timeoutSignal() });
+  if (!response.ok) throw new Error(`โหลด ${DATA_URL} ไม่สำเร็จ (HTTP ${response.status})`);
+  return response.json();
+}
+
+function renderDataStatus(status, checkedAt, errorMessage) {
+  const el = document.getElementById("dataStatus");
+  el.hidden = false;
+  el.textContent = "";
+  el.className = `live-status ${status}`;
+
+  const dot = document.createElement("span");
+  dot.className = "live-dot";
+  el.appendChild(dot);
+
+  const message = status === STATUS.LIVE
+    ? `ตรวจข้อมูลรอบใหม่เองอัตโนมัติทุก ${minutesOf(REFRESH_INTERVAL_MS)} นาที ` +
+      `(ตรวจล่าสุดเมื่อ ${formatThaiDateTime(checkedAt)} น.)`
+    : `ตรวจข้อมูลรอบใหม่ไม่สำเร็จ (${errorMessage}) — ` +
+      `แสดงข้อมูลที่โหลดไว้เมื่อ ${formatThaiDateTime(checkedAt)} น. กำลังลองใหม่อัตโนมัติ`;
+  el.appendChild(document.createTextNode(message));
+}
+
+function renderDashboard(checkedAt) {
+  setText("periodLabel", `ข้อมูล ณ ${DB.meta.periodLabel} (${formatNumber(DB.meta.daysCovered)} วัน)`);
+  setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
+  renderDataStatus(STATUS.LIVE, checkedAt, "");
+  render();
+}
+
+/* ตรวจ data.json 1 รอบ — วาดใหม่เฉพาะตอนไฟล์เปลี่ยนจริง (ดูจาก meta.generatedAt)
+   จะได้ไม่รีเซ็ตกราฟและตัวกรองที่ผู้ใช้เลือกไว้ทุกรอบโดยไม่จำเป็น */
+async function refreshOnce() {
   try {
-    const response = await fetch("data.json");
-    if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (HTTP ${response.status})`);
-    DB = await response.json();
+    const data = await fetchWithRetry(requestData, DATA_URL);
+    const isSameData = DB.meta.generatedAt === data.meta.generatedAt;
+    DB = data;
+    lastCheckedAt = new Date();
+    isLastRefreshOk = true;
+
+    if (isSameData) {
+      renderDataStatus(STATUS.LIVE, lastCheckedAt, "");
+      return;
+    }
+    renderDashboard(lastCheckedAt);
+  } catch (error) {
+    console.error(`ตรวจ ${DATA_URL} ไม่สำเร็จ:`, error);
+    isLastRefreshOk = false;
+    renderDataStatus(STATUS.STALE, lastCheckedAt, error.message);
+  }
+}
+
+function scheduleNextRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, isLastRefreshOk ? REFRESH_INTERVAL_MS : RETRY_INTERVAL_MS);
+}
+
+async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  try {
+    await refreshOnce();
+  } finally {
+    isRefreshing = false;
+    scheduleNextRefresh();
+  }
+}
+
+/* กลับมาที่แท็บนี้แล้วข้อมูลเก่าเกินกำหนด → ตรวจใหม่ทันที ไม่ต้องรอครบรอบ
+   (เบราว์เซอร์หน่วง timer ของแท็บที่ซ่อนอยู่ ข้อมูลจึงอาจค้างนานกว่าที่ตั้งไว้) */
+function refreshIfStaleOnFocus() {
+  if (document.visibilityState !== "visible") return;
+  const age = lastCheckedAt === null ? Infinity : Date.now() - lastCheckedAt.getTime();
+  if (age >= STALE_AFTER_MS) refresh();
+}
+
+async function init() {
+  initChartTheme();
+
+  try {
+    DB = await fetchWithRetry(requestData, DATA_URL);
+    lastCheckedAt = new Date();
+    isLastRefreshOk = true;
   } catch (error) {
     document.querySelector("main").innerHTML =
       `<p style="padding:60px 20px;text-align:center;color:#dc2626;">
@@ -1182,13 +1282,13 @@ async function init() {
     return;
   }
 
-  initChartTheme();
-  setText("periodLabel", `ข้อมูล ณ ${DB.meta.periodLabel} (${formatNumber(DB.meta.daysCovered)} วัน)`);
-  setText("generatedAt", new Date(DB.meta.generatedAt).toLocaleString("th-TH"));
   populateProvinceFilter();
   document.getElementById("provinceFilter").addEventListener("change", render);
   document.getElementById("periodFilter").addEventListener("change", render);
-  render();
+  renderDashboard(lastCheckedAt);
+
+  document.addEventListener("visibilitychange", refreshIfStaleOnFocus);
+  scheduleNextRefresh();
 }
 
 init();
